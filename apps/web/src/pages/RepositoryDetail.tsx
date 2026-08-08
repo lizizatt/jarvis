@@ -5,6 +5,7 @@ import { api } from '../api';
 import { useLoad } from '../hooks';
 import { TaskPanel } from '../components/TaskPanel';
 import { DiffPanel } from '../components/DiffPanel';
+import { PreviewPanel } from '../components/PreviewPanel';
 import { TaskStatusBadge } from '../components/Status';
 import { AmbientSigil } from '../components/Sigil';
 import type { TaskSummary } from '../types';
@@ -57,7 +58,7 @@ export function RepositoryDetail() {
       {tab === 'agent' && <div className="agent-layout"><aside className="task-sidebar"><div className="sidebar-heading"><span><History size={16} />History</span><button className="icon-button" aria-label="New task" onClick={() => setSelectedTask(undefined)} data-testid="new-task"><Plus /></button></div><div className="task-history"><button className={!selectedTask ? 'new active' : 'new'} onClick={() => setSelectedTask(undefined)}><span>New task</span><Plus size={15} /></button>{tasks.data?.map((item) => <button key={item.id} className={item.id === selectedTask ? 'active' : ''} onClick={() => setSelectedTask(item.id)} data-testid={`history-${item.id}`}><span>{item.title ?? 'Developer task'}</span><TaskStatusBadge status={item.status} /></button>)}</div></aside><section className="agent-main">{task ? <TaskPanel task={task} onTaskChange={updateTask} /> : <div className="start-task" data-testid="start-task"><div><Play size={25} /><h2>Start a task</h2><p>Give the agent a clear goal for this checkout.</p></div><form onSubmit={start}><label htmlFor="initial-prompt" className="sr-only">Task prompt</label><textarea id="initial-prompt" name="prompt" rows={5} required placeholder="Describe the change, constraints, and how to verify it…" /><label htmlFor="task-model">Model</label><select id="task-model" name="modelId" defaultValue="auto" disabled={models.loading || !availableModels.length}><option value="auto">Auto</option>{availableModels.filter((model) => model.id !== 'auto').map((model) => <option key={model.id} value={model.id}>{model.name} · {model.family}</option>)}</select>{models.error && <p className="form-error" role="alert">{models.error}</p>}{startError && <p className="form-error" role="alert">{startError}</p>}<button className="button primary" disabled={starting || !availableModels.length}><Play size={16} />{starting ? 'Starting…' : 'Start agent'}</button></form></div>}</section></div>}
       {tab === 'changes' && <DiffPanel repositoryId={id} />}
       {tab === 'terminal' && <Suspense fallback={<div className="empty compact-empty">Loading terminal…</div>}><TerminalPanel repositoryId={id} /></Suspense>}
-      {tab === 'preview' && <div className="preview-view">{repo.previewUrl ? <iframe title={`${repo.name} preview`} src={repo.previewUrl} data-testid="preview-frame" /> : <div className="empty"><Monitor /><h2>No preview available</h2><p>The Jarvis-managed landing page has not been created for this checkout.</p></div>}</div>}
+      {tab === 'preview' && <PreviewPanel repositoryId={id} repositoryName={repo.name} previewUrl={repo.previewUrl} />}
     </div>
   </main>;
 }

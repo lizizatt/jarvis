@@ -100,6 +100,42 @@ describe('server MVP', () => {
     expect((await app.inject({ method: 'GET', url: '/api/repositories/does-not-exist/status-files' })).statusCode).toBe(404);
   });
 
+  it('lists only tracked README.md and HTML files as preview candidates', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    await mkdir(join(sandbox.repository, 'docs'), { recursive: true });
+    await writeFile(join(sandbox.repository, 'docs', 'README.md'), '# Docs\n');
+    await writeFile(join(sandbox.repository, 'index.html'), '<h1>Home</h1>\n');
+    await writeFile(join(sandbox.repository, 'notes.txt'), 'not a preview candidate\n');
+    await git(sandbox.repository, ['add', 'docs/README.md', 'index.html', 'notes.txt']);
+    await git(sandbox.repository, ['commit', '-m', 'add preview candidates']);
+    await writeFile(join(sandbox.repository, 'untracked.html'), '<h1>Ignored</h1>\n');
+
+    const files = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/preview-files` })).json() as Array<{ path: string; kind: string }>;
+    expect(files).toHaveLength(3);
+    expect(files).toContainEqual({ path: 'README.md', kind: 'readme' });
+    expect(files).toContainEqual({ path: 'docs/README.md', kind: 'readme' });
+    expect(files).toContainEqual({ path: 'index.html', kind: 'html' });
+    expect(files.some((file) => file.path === 'notes.txt' || file.path === 'untracked.html')).toBe(false);
+  });
+
+  it('reports 404 for preview-files on an unknown repository', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    expect((await app.inject({ method: 'GET', url: '/api/repositories/does-not-exist/preview-files' })).statusCode).toBe(404);
+  });
+
+  it('serves README.md through the repository preview route as readable text', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    const response = await app.inject({ method: 'GET', url: `/previews/${repository.id}/repo/README.md` });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/plain');
+    expect(response.body).toContain('fixture');
+  });
+
   it('reports status for a repository before its first commit', async () => {
     const sandbox = await makeSandbox();
     const unborn = join(sandbox.root, 'unborn');

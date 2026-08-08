@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, ChevronDown, CircleHelp, FilePenLine, LoaderCircle, MessageSquare, Play, TerminalSquare, User } from 'lucide-react';
+import { Bot, CheckCircle2, ChevronDown, CircleHelp, FilePenLine, Info, LoaderCircle, MessageSquare, Play, TerminalSquare, User, X } from 'lucide-react';
 import { useState } from 'react';
 import type { TaskEvent } from '../types';
 
@@ -139,7 +139,29 @@ function QuestionActions({ wire, answered, onAnswer }: { wire: PresentedEvent; a
   </form>;
 }
 
+// Drop the internal duplicate-tracking payload; every other field is already useful to inspect.
+function inspectablePayload(event: PresentedEvent): Record<string, unknown> {
+  const { data, ...rest } = event as Record<string, unknown> & { data?: unknown };
+  void data;
+  return rest;
+}
+
+function EntryInspector({ event, onClose }: { event: PresentedEvent; onClose: () => void }) {
+  const { label } = eventPresentation(event);
+  return <div className="modal-backdrop" onClick={onClose}>
+    <section className="modal entry-inspector" role="dialog" aria-modal="true" aria-labelledby="entry-inspector-title" onClick={(domEvent) => domEvent.stopPropagation()}>
+      <header>
+        <div><p className="eyebrow">Entry #{event.sequence}</p><h2 id="entry-inspector-title">{label}</h2></div>
+        <button type="button" className="icon-button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+      </header>
+      <p className="entry-inspector-time">{new Date(event.timestamp).toLocaleString()}</p>
+      <pre className="entry-inspector-json">{JSON.stringify(inspectablePayload(event), null, 2)}</pre>
+    </section>
+  </div>;
+}
+
 export function Timeline({ events, onAnswer }: { events: TaskEvent[]; onAnswer: (text: string, questionId?: string, approval?: boolean) => void }) {
+  const [inspecting, setInspecting] = useState<PresentedEvent>();
   if (!events.length) return <div className="empty compact-empty" data-testid="timeline-empty">Waiting for agent activity…</div>;
   const visibleEvents = compactToolActivity(coalesceAssistantMessages(events.filter((event) => {
     if (event.kind === 'question' && event.data?.rawEvent && typeof event.data.rawEvent === 'object'
@@ -160,18 +182,25 @@ export function Timeline({ events, onAnswer }: { events: TaskEvent[]; onAnswer: 
     const wire = event as PresentedEvent;
     return (wire.kind === 'answer' || wire.kind === 'approval') && typeof wire.questionId === 'string' ? [wire.questionId] : [];
   }));
-  return <ol className="timeline" data-testid="task-timeline">
-    {visibleEvents.map((event) => {
-      const { Icon, label, text } = eventPresentation(event);
-      const wire = event as TaskEvent & Record<string, unknown>;
-      return <li key={`${event.sequence}-${event.id ?? event.type}`} className={`timeline-event event-${event.type}`} data-sequence={event.sequence}>
-        <div className="event-icon"><Icon size={17} /></div>
-        <div className="event-body"><header><strong>{label}</strong><time>{new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header>
-          {event.type === 'output' ? <details className="raw-output"><summary><ChevronDown size={15} />Raw {event.stream}</summary><pre>{String(wire.text ?? event.raw ?? text)}</pre></details> : <p>{text}</p>}
-          {event.type === 'operation' && typeof wire.output === 'string' && <details className="raw-output"><summary><ChevronDown size={15} />{wire.operation === 'run_command' ? 'Command output' : 'Activity output'}</summary><pre>{wire.output}</pre></details>}
-          {event.type === 'question' && <QuestionActions wire={wire} answered={typeof wire.questionId === 'string' && answeredQuestionIds.has(wire.questionId)} onAnswer={onAnswer} />}
-        </div>
-      </li>;
-    })}
-  </ol>;
+  return <>
+    <ol className="timeline" data-testid="task-timeline">
+      {visibleEvents.map((event) => {
+        const { Icon, label, text } = eventPresentation(event);
+        const wire = event as TaskEvent & Record<string, unknown>;
+        return <li key={`${event.sequence}-${event.id ?? event.type}`} className={`timeline-event event-${event.type}`} data-sequence={event.sequence}>
+          <div className="event-icon"><Icon size={17} /></div>
+          <div className="event-body">
+            <button type="button" className="event-header" onClick={() => setInspecting(wire)} aria-label={`Inspect ${label} entry`}>
+              <strong>{label}</strong>
+              <span className="event-header-meta"><time>{new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><Info size={13} /></span>
+            </button>
+            {event.type === 'output' ? <details className="raw-output"><summary><ChevronDown size={15} />Raw {event.stream}</summary><pre>{String(wire.text ?? event.raw ?? text)}</pre></details> : <p>{text}</p>}
+            {event.type === 'operation' && typeof wire.output === 'string' && <details className="raw-output"><summary><ChevronDown size={15} />{wire.operation === 'run_command' ? 'Command output' : 'Activity output'}</summary><pre>{wire.output}</pre></details>}
+            {event.type === 'question' && <QuestionActions wire={wire} answered={typeof wire.questionId === 'string' && answeredQuestionIds.has(wire.questionId)} onAnswer={onAnswer} />}
+          </div>
+        </li>;
+      })}
+    </ol>
+    {inspecting && <EntryInspector event={inspecting} onClose={() => setInspecting(undefined)} />}
+  </>;
 }

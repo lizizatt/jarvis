@@ -1,4 +1,4 @@
-import type { ModelMetadata, PullRequest, Repository, RepositoryStatus, RepositoryStatusFile, TaskEvent, TaskSummary, TerminalSession } from './types';
+import type { ModelMetadata, PreviewFile, PullRequest, Repository, RepositoryStatus, RepositoryStatusFile, TaskEvent, TaskSummary, TerminalSession } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -85,6 +85,7 @@ export const api = {
   stop: async (taskId: string) => task(await request<WireTask>(`/api/tasks/${taskId}/stop`, { method: 'POST', body: JSON.stringify({ confirmed: true, stoppedBy: 'pwa' }) })),
   diff: (id: string, mode: 'worktree' | 'staged') => requestText(`/api/repositories/${id}/diff?staged=${mode === 'staged'}`),
   statusFiles: (id: string) => request<RepositoryStatusFile[]>(`/api/repositories/${id}/status-files`),
+  previewFiles: (id: string) => request<PreviewFile[]>(`/api/repositories/${id}/preview-files`),
   pullRequest: async (id: string) => {
     const value = await request<PullRequest | { available: boolean; pullRequest: PullRequest | null } | null>(`/api/repositories/${id}/pull-request`);
     return value && 'available' in value ? value.pullRequest : value;

@@ -51,6 +51,21 @@ export async function repositoryStatusFiles(repositoryPath: string): Promise<Rep
   return output.split('\n').filter(Boolean).map((line) => ({ status: line.slice(0, 2), path: line.slice(3) }));
 }
 
+export interface PreviewCandidate { path: string; kind: 'readme' | 'html' }
+
+// git ls-files already respects .gitignore for tracked files, so no manual ignore-directory list is needed.
+export async function previewCandidates(repositoryPath: string): Promise<PreviewCandidate[]> {
+  const output = await git(repositoryPath, ['ls-files', '-z']);
+  const candidates: PreviewCandidate[] = [];
+  for (const path of output.split('\0')) {
+    if (!path) continue;
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    if (/^readme\.md$/i.test(name)) candidates.push({ path, kind: 'readme' });
+    else if (/\.html?$/i.test(name)) candidates.push({ path, kind: 'html' });
+  }
+  return candidates.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 export async function pullRequest(repositoryPath: string): Promise<unknown> {
   try {
     const output = await execFileAsync('gh', ['pr', 'view',

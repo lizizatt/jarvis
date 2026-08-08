@@ -62,4 +62,5 @@ export interface PullRequest {
 
 export interface DiffResult { mode: 'worktree' | 'staged'; diff: string }
 export interface RepositoryStatusFile { status: string; path: string }
+export interface PreviewFile { path: string; kind: 'readme' | 'html' }
 export interface TerminalSession { id: string; name?: string; status?: 'new' | 'running' | 'exited'; columns?: number; rows?: number }

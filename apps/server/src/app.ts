@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { PushSubscription } from 'web-push';
 import { Store } from './database.js';
 import { EventHub } from './events.js';
-import { pullRequest, repositoryDiff, repositoryStatus, repositoryStatusFiles, validateGitRoot } from './git.js';
+import { pullRequest, previewCandidates, repositoryDiff, repositoryStatus, repositoryStatusFiles, validateGitRoot } from './git.js';
 import { ensureLanding, readPreviewFile, rewritePreviewHtml } from './previews.js';
 import { PushService } from './push.js';
 import { TaskManager } from './tasks.js';
@@ -71,6 +71,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   app.get<{ Params: IdParams; Querystring: { staged?: string } }>('/api/repositories/:id/diff', async (request, reply) =>
     withRepository(store, request.params.id, reply, (path) => repositoryDiff(path, request.query.staged === 'true')));
   app.get<{ Params: IdParams }>('/api/repositories/:id/status-files', async (request, reply) => withRepository(store, request.params.id, reply, repositoryStatusFiles));
+  app.get<{ Params: IdParams }>('/api/repositories/:id/preview-files', async (request, reply) => withRepository(store, request.params.id, reply, previewCandidates));
   app.get<{ Params: IdParams }>('/api/repositories/:id/pull-request', async (request, reply) => withRepository(store, request.params.id, reply, pullRequest));
   app.get<{ Params: IdParams }>('/api/repositories/:id/models', async (request, reply) => {
     const repository = store.getRepository(request.params.id);
