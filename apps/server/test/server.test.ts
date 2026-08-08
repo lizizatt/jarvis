@@ -139,6 +139,24 @@ describe('server MVP', () => {
     expect(response.body).toContain('<a href="https://example.com">link</a>');
   });
 
+  it('resolves a relative inline markdown image through the repository preview route', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    await mkdir(join(sandbox.repository, 'docs'), { recursive: true });
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108020000009077530de00000000c4944415478da63f8ffff3f0005fe02fea739cd9b0000000049454e44ae426082', 'hex');
+    await writeFile(join(sandbox.repository, 'docs', 'diagram.png'), png);
+    await writeFile(join(sandbox.repository, 'README.md'), '# Title\n\n![diagram](docs/diagram.png)\n');
+
+    const readme = await app.inject({ method: 'GET', url: `/previews/${repository.id}/repo/README.md` });
+    expect(readme.body).toMatch(/<img[^>]*src="docs\/diagram\.png"/);
+
+    const image = await app.inject({ method: 'GET', url: `/previews/${repository.id}/repo/docs/diagram.png` });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers['content-type']).toBe('image/png');
+    expect(image.rawPayload).toEqual(png);
+  });
+
   it('reports status for a repository before its first commit', async () => {
     const sandbox = await makeSandbox();
     const unborn = join(sandbox.root, 'unborn');
