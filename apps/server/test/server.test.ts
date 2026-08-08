@@ -144,7 +144,8 @@ describe('server MVP', () => {
     const app = await trackedApp(configuration(sandbox.dataDir));
     const repository = await register(app, sandbox.repository);
     await mkdir(join(sandbox.repository, 'docs'), { recursive: true });
-    const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108020000009077530de00000000c4944415478da63f8ffff3f0005fe02fea739cd9b0000000049454e44ae426082', 'hex');
+    // A real, fully decodable 1x1 PNG (not just a plausible-looking byte string) so the test catches corrupt image bytes too.
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
     await writeFile(join(sandbox.repository, 'docs', 'diagram.png'), png);
     await writeFile(join(sandbox.repository, 'README.md'), '# Title\n\n![diagram](docs/diagram.png)\n');
 
