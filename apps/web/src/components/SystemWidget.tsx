@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, Cpu, MemoryStick } from 'lucide-react';
 import { useLoad } from '../hooks';
 import { api } from '../api';
-import { memoryPercent, sparklinePath } from '../metrics';
+import { memoryPercent } from '../metrics';
+import { DitherSparkline } from './DitherSparkline';
 
 function equalMetrics(current: Awaited<ReturnType<typeof api.metrics>>, next: Awaited<ReturnType<typeof api.metrics>>) {
   return current.timestamp === next.timestamp;
@@ -25,12 +26,12 @@ export function SystemWidget() {
     <div className="system-widget-metric">
       <Cpu size={14} />
       <span className="system-widget-value">{data.cpuPercent.toFixed(0)}<small>%</small></span>
-      <svg className="system-widget-spark" viewBox="0 0 60 20" preserveAspectRatio="none" aria-hidden="true"><path d={sparklinePath(cpuHistory, 60, 20)} /></svg>
+      <DitherSparkline values={cpuHistory} className="system-widget-spark" cell={1} />
     </div>
     <div className="system-widget-metric">
       <MemoryStick size={14} />
       <span className="system-widget-value">{memPercent.toFixed(0)}<small>%</small></span>
-      <svg className="system-widget-spark" viewBox="0 0 60 20" preserveAspectRatio="none" aria-hidden="true"><path d={sparklinePath(memHistory, 60, 20)} /></svg>
+      <DitherSparkline values={memHistory} className="system-widget-spark" cell={1} />
     </div>
     <ChevronRight className="system-widget-chevron" size={16} aria-hidden="true" />
   </Link>;

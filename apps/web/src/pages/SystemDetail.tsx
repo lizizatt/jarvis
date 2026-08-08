@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { api } from '../api';
 import { useLoad } from '../hooks';
 import { AmbientSigil } from '../components/Sigil';
-import { formatBytes, memoryPercent, sparklinePath } from '../metrics';
+import { DitherSparkline } from '../components/DitherSparkline';
+import { formatBytes, memoryPercent } from '../metrics';
 import type { HostMetrics } from '../types';
 
 function equalMetrics(current: HostMetrics, next: HostMetrics) {
@@ -40,12 +41,12 @@ function SystemBody({ metrics }: { metrics: HostMetrics }) {
       <div className="metric-card">
         <div className="metric-head"><span>CPU</span><span>{metrics.cpuCount} cores</span></div>
         <div className="metric-value">{metrics.cpuPercent.toFixed(0)}<small>%</small></div>
-        <svg className="metric-chart" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true"><path d={sparklinePath(cpuHistory, 240, 64)} /></svg>
+        <DitherSparkline values={cpuHistory} className="metric-chart" />
       </div>
       <div className="metric-card">
         <div className="metric-head"><span>Memory</span><span>{formatBytes(metrics.memoryTotalBytes)}</span></div>
         <div className="metric-value">{memPercent.toFixed(0)}<small>%</small></div>
-        <svg className="metric-chart" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true"><path d={sparklinePath(memHistory, 240, 64)} /></svg>
+        <DitherSparkline values={memHistory} className="metric-chart" />
         <p className="metric-detail">{formatBytes(metrics.memoryUsedBytes)} used of {formatBytes(metrics.memoryTotalBytes)}</p>
       </div>
     </section>
