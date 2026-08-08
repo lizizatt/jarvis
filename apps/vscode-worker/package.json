@@ -1,0 +1,83 @@
+{
+  "name": "jarvis-copilot-worker",
+  "publisher": "jarvis-local",
+  "displayName": "Jarvis Copilot Worker",
+  "description": "Connects Jarvis jobs to VS Code Copilot language models.",
+  "version": "0.0.4",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "jarvisCopilotWorker.connect",
+        "title": "Jarvis: Connect Copilot Worker"
+      },
+      {
+        "command": "jarvisCopilotWorker.disconnect",
+        "title": "Jarvis: Disconnect Copilot Worker"
+      },
+      {
+        "command": "jarvisCopilotWorker.showStatus",
+        "title": "Jarvis: Show Status"
+      },
+      {
+        "command": "jarvisCopilotWorker.runCapabilityTest",
+        "title": "Jarvis: Run Copilot Capability Test"
+      }
+    ],
+    "configuration": {
+      "title": "Jarvis Copilot Worker",
+      "properties": {
+        "jarvisCopilotWorker.serverUrl": {
+          "type": "string",
+          "default": "ws://127.0.0.1:3210/ws/workers",
+          "description": "WebSocket endpoint for the Jarvis worker server."
+        },
+        "jarvisCopilotWorker.preferredModel": {
+          "type": "string",
+          "default": "auto",
+          "description": "Preferred Copilot model ID, family, or name. Falls back to the first available model."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "build": "npm run package",
+    "typecheck": "npm run check-types",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "vsix": "npm run package && vsce package --no-dependencies --allow-missing-repository --skip-license -o jarvis-copilot-worker.vsix",
+    "install:local": "npm run vsix && code --install-extension jarvis-copilot-worker.vsix --force",
+    "compile-tests": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\" && tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.125.0",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.6.2",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.5.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
+  }
+}

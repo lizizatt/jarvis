@@ -1,0 +1,44 @@
+[Unit]
+Description=Jarvis Developer Control Plane
+Documentation=https://github.com/saildrone/jarvis
+Wants=network-online.target
+Wants=jarvis-terminal-host.service
+After=network-online.target tailscaled.service jarvis-terminal-host.service
+ConditionUser=!root
+
+[Service]
+Type=simple
+WorkingDirectory=@@REPO_ROOT@@
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jarvis
+
+# Bind to localhost by default; override via environment file
+Environment="JARVIS_HOST=127.0.0.1"
+Environment="JARVIS_PORT=3210"
+Environment="NODE_ENV=production"
+Environment="PATH=@@TOOL_PATH@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin:/opt/nodejs/bin"
+
+# Load per-user configuration (if present)
+EnvironmentFile=-%h/.config/jarvis/.env
+Environment="JARVIS_TERMINAL_HOST_EXTERNAL=true"
+Environment="JARVIS_AGENT_BACKEND=worker"
+
+# Run the server
+ExecStart=@@NODE_EXECUTABLE@@ @@REPO_ROOT@@/apps/server/dist/src/index.js
+
+# Restart on failure
+Restart=on-failure
+RestartSec=10
+
+# Cleanup on stop
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Resource limits (adjust based on expected task volume)
+MemoryMax=512M
+LimitNOFILE=65536
+
+[Install]
+WantedBy=default.target

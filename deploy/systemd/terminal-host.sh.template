@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+data_dir="${JARVIS_DATA_DIR:-$HOME/.jarvis}"
+exec "@@NODE_EXECUTABLE@@" "@@REPO_ROOT@@/apps/server/dist/src/terminal-host.js" "$data_dir/terminal-host.sock"

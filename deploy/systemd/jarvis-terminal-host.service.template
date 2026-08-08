@@ -1,0 +1,15 @@
+[Unit]
+Description=Jarvis Persistent Terminal Host
+PartOf=
+
+[Service]
+Type=simple
+WorkingDirectory=@@REPO_ROOT@@
+EnvironmentFile=-%h/.config/jarvis/.env
+ExecStart=@@TERMINAL_RUNNER@@
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+
+[Install]
+WantedBy=default.target
