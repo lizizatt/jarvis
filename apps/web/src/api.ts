@@ -1,9 +1,10 @@
 import type { ModelMetadata, PreviewFile, PullRequest, Repository, RepositoryStatus, RepositoryStatusFile, TaskEvent, TaskSummary, TerminalSession } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const hasBody = init?.body !== undefined && init.body !== null;
   const response = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers }
+    headers: { ...(hasBody ? { 'Content-Type': 'application/json' } : {}), ...init?.headers }
   });
   if (!response.ok) {
     const body = await response.text();

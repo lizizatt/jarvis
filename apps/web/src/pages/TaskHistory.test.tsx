@@ -29,7 +29,11 @@ test('lists conversations, blocks deleting active ones, and deletes finished one
 
   const doneRow = screen.getByTestId('history-row-task-done');
   await userEvent.click(within(doneRow).getByTestId('delete-task-done'));
-  expect(fetchMock).toHaveBeenCalledWith('/api/tasks/task-done', expect.objectContaining({ method: 'DELETE' }));
+  const deleteCall = fetchMock.mock.calls.find(([url, init]) => url === '/api/tasks/task-done' && init?.method === 'DELETE');
+  expect(deleteCall).toBeDefined();
+  const headers = deleteCall?.[1]?.headers;
+  if (headers instanceof Headers) expect(headers.has('Content-Type')).toBe(false);
+  else expect((headers as Record<string, string> | undefined)?.['Content-Type']).toBeUndefined();
   expect(screen.queryByTestId('history-row-task-done')).not.toBeInTheDocument();
 });
 
