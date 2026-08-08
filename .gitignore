@@ -10,3 +10,5 @@ test-results/
 blob-report/
 *.log
 .DS_Store
+apps/vscode-worker/.vscode-test/
+apps/vscode-worker/out/
