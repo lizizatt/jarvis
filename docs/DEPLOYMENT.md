@@ -1,352 +1,104 @@
-# Deployment Guide
+# Deployment
 
-This guide covers production deployment of Jarvis on a Linux laptop.
+Jarvis is deployed from the checkout and runs as two per-user systemd services. Build output is local and ignored by Git.
 
-## Quick Start
+## First Installation
 
-For most users, automated setup is recommended:
+Follow [Getting Started](GETTING_STARTED.md). The installer writes units under `~/.config/systemd/user`, copies `.env.sample` to `~/.config/jarvis/.env` when absent, builds the checkout, and starts both services.
+
+Do not copy service templates directly: the installer resolves checkout and executable paths.
+
+## Publish a Local Build
+
+Validate before publishing. See [AGENTS.md](../AGENTS.md) for the full validation suite.
+
+### Web-only change
 
 ```bash
-cd ~/jarvis
-bash deploy/systemd/install.sh
+npm run build --workspace @jarvis/web
 ```
 
-This will:
-1. Verify Node.js, npm, VS Code, and the Jarvis Copilot Worker extension are installed
-2. Build the project
-3. Create systemd configuration directories
-4. Install a per-user systemd service
-5. Start the service with auto-restart on failure
-6. Display connection info
+The server reads `apps/web/dist` directly; no service restart is needed. Verify the changed screen in a fresh browser/PWA load.
 
-Then access Jarvis at http://127.0.0.1:3210
+### Server or terminal-host change
 
-## Manual Installation
-
-If you prefer manual control or have a custom setup:
-
-### 1. Install dependencies
 ```bash
-# Ensure these are in PATH:
-node --version         # ≥ 20.19
-npm --version
-code --version
+npm run build --workspace @jarvis/server
+systemctl --user restart jarvis-terminal-host jarvis
 ```
 
-### 2. Build the project
+Restarting the terminal host ends active terminal sessions. Announce that impact before deploying.
+
+### Cross-component change
+
 ```bash
-cd ~/jarvis
-npm ci
 npm run build
+systemctl --user restart jarvis-terminal-host jarvis
 ```
 
-### 3. Create systemd service (optional)
+### VS Code worker change
+
 ```bash
-bash deploy/systemd/install.sh
+npm run install:local --workspace jarvis-copilot-worker
 ```
 
-The installer resolves the current checkout, Node executable, and Copilot tool path before writing the user unit. Do not copy the template directly without replacing its `@@...@@` placeholders.
+Reload every registered VS Code window; extension installation alone does not replace code in running extension hosts. Reloading interrupts active worker turns. Re-run **Jarvis: Connect Copilot Worker** only if the window does not reconnect automatically.
 
-### 4. Run manually (without systemd)
+## Verify
+
 ```bash
-npm --workspace @jarvis/server start
+systemctl --user is-active jarvis jarvis-terminal-host
+curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:3210/api/workers
+code --list-extensions --show-versions | grep jarvis-local.jarvis-copilot-worker
 ```
 
-By default, it listens on http://127.0.0.1:3210
+Health does not prove that workers are connected. Check `/api/workers` after server or worker changes.
+
+For failures:
+
+```bash
+journalctl --user -u jarvis -n 100 --no-pager
+journalctl --user -u jarvis-terminal-host -n 100 --no-pager
+```
+
+Do not use `git checkout`, `git reset`, or source deletion as a deployment rollback. Preserve the worktree, inspect the failure, and deliberately rebuild a known revision only with user approval.
+
+## Update an Existing Installation
+
+After pulling a dependency or full-stack update:
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+systemctl --user restart jarvis-terminal-host jarvis
+```
+
+If `apps/vscode-worker` changed, reinstall it and reload registered windows as described above.
 
 ## Configuration
 
-### Environment Variables
+The services load `~/.config/jarvis/.env`. Edit it, then restart both services when shared values such as `JARVIS_DATA_DIR` change. See [Configuration](CONFIGURATION.md).
 
-Create `~/.config/jarvis/.env` to customize:
+## Backup and Restore
 
-```bash
-JARVIS_HOST=127.0.0.1          # Bind address (default: localhost)
-JARVIS_PORT=3210               # Listen port
-# JARVIS_DATA_DIR=/home/you/.jarvis  # Optional; use an absolute path
-JARVIS_AGENT_BACKEND=worker      # matching VS Code repository window required
-JARVIS_POLICY="..."            # Policy text for agents
-```
-
-See [CONFIGURATION.md](../docs/CONFIGURATION.md) for all options.
-
-The systemd service automatically loads `~/.config/jarvis/.env` at startup.
-
-### Network Access
-
-#### Tailscale Serve (recommended)
+Stop both services before copying live state:
 
 ```bash
-tailscale serve --bg http://127.0.0.1:3210
+systemctl --user stop jarvis jarvis-terminal-host
+tar czf "$HOME/jarvis-backup-$(date +%Y%m%d).tar.gz" -C "$HOME" .jarvis
+systemctl --user start jarvis-terminal-host jarvis
 ```
 
-Exposes Jarvis to all Tailnet members at `https://<device-name>.<tailnet>.ts.net/`
+To restore, stop both services, replace `~/.jarvis` from a trusted backup, then start the terminal host before Jarvis. Database schema updates run at server startup.
 
-#### LAN fallback
-
-Set `JARVIS_HOST` to your LAN IP and generate a self-signed certificate:
-
-```bash
-JARVIS_HOST=192.168.1.100 npm --workspace @jarvis/server start
-```
-
-For HTTPS (required for PWA), use a reverse proxy (nginx, caddy, etc.).
-
-#### Localhost only
-
-Default behavior; PWA features require HTTPS, which is not available on localhost over HTTP.
-
-## Systemd Service
-
-### Status and logs
-
-```bash
-# Check status
-systemctl --user status jarvis
-
-# View logs
-journalctl --user -u jarvis -f
-
-# View last 50 lines
-journalctl --user -u jarvis -n 50
-```
-
-### Restart
-
-```bash
-systemctl --user restart jarvis
-```
-
-### Stop
-
-```bash
-systemctl --user stop jarvis
-```
-
-### View the systemd unit
-
-```bash
-systemctl --user cat jarvis
-```
-
-## Monitoring
-
-### Health endpoint
-
-```bash
-curl http://127.0.0.1:3210/api/health
-# { "ok": true, "interruptedOnStartup": false }
-```
-
-### Database integrity
-
-```bash
-sqlite3 ~/.jarvis/jarvis.sqlite3 "PRAGMA integrity_check;"
-```
-
-### Disk usage
-
-```bash
-du -sh ~/.jarvis
-```
-
-## Backup & Recovery
-
-### Backup
-
-```bash
-# Stop the service first
-systemctl --user stop jarvis
-
-# Backup the entire data directory
-tar czf ~/jarvis-backup-$(date +%Y%m%d).tar.gz ~/.jarvis
-
-# Restart
-systemctl --user start jarvis
-```
-
-### Restore
-
-```bash
-# Stop the service
-systemctl --user stop jarvis
-
-# Restore from backup
-tar xzf ~/jarvis-backup-*.tar.gz -C ~/
-
-# Restart
-systemctl --user start jarvis
-```
-
-### Partial recovery
-
-To recover only specific repositories or tasks, use a SQLite client:
-
-```bash
-systemctl --user stop jarvis
-
-sqlite3 ~/.jarvis/jarvis.sqlite3
-
-# Inside sqlite3 shell:
-.tables
-SELECT * FROM repositories;
-SELECT * FROM tasks WHERE state = 'stopped';
--- etc.
-
-.quit
-
-systemctl --user start jarvis
-```
-
-## Upgrade
-
-### From source
-
-```bash
-cd ~/jarvis
-
-# Fetch latest code
-git pull
-
-# Rebuild
-npm ci
-npm run build
-
-# Restart service
-systemctl --user restart jarvis
-```
-
-### Database migrations
-
-Migrations are applied automatically at startup. No manual action needed.
-
-## Troubleshooting
-
-### Service won't start
-
-```bash
-# Check logs
-journalctl --user -u jarvis -n 20
-
-# Common causes:
-# - Data directory not writable: ls -ld ~/.jarvis
-# - Node.js not found: which node (check ExecStart in systemd unit)
-# - Port already in use: lsof -i :3210
-```
-
-### High CPU usage
-
-```bash
-# Check if a task is hung
-curl http://127.0.0.1:3210/api/tasks
-
-# View active processes
-ps aux | grep "npm\|node\|copilot"
-
-# Restart the service
-systemctl --user restart jarvis
-```
-
-### Database locked
-
-```bash
-# Stop the service
-systemctl --user stop jarvis
-
-# Check for stale processes
-ps aux | grep "node.*index.js"
-
-# Wait a few seconds, then restart
-systemctl --user start jarvis
-```
-
-### PWA won't install
-
-- Ensure HTTPS (use Tailscale Serve or a reverse proxy)
-- Try in a private/incognito window
-- Clear browser cache
-- Check browser console for errors
-
-### Agent won't respond
-
-```bash
-# Test the CLI directly
-copilot -p "Reply with: Copilot is ready" --allow-all-tools
-
-# Check if agent is hung
-ps aux | grep copilot
-kill -9 <pid>  # If necessary
-
-# Restart the server
-systemctl --user restart jarvis
-```
-
-## Security Considerations
-
-- **Tailscale-only:** Do not expose Jarvis to the public Internet
-- **Full shell access:** The PWA provides unrestricted terminal access to the laptop user
-- **Local credentials:** Jarvis uses existing GitHub CLI auth; no credentials are copied
-- **Data isolation:** All data stays on the laptop in `~/.jarvis`
-
-## Performance Tuning
-
-### Memory
-
-If running many concurrent tasks, increase the memory limit in the systemd unit:
-
-```bash
-# Edit the service
-systemctl --user edit jarvis
-
-# Add:
-[Service]
-MemoryMax=1G
-
-# Restart
-systemctl --user restart jarvis
-```
-
-### Database
-
-For very large task histories, consider vacuuming the database:
-
-```bash
-systemctl --user stop jarvis
-sqlite3 ~/.jarvis/jarvis.sqlite3 "VACUUM;"
-systemctl --user start jarvis
-```
-
-### Network
-
-For LAN-only deployments without Tailscale, disable firewalls selectively:
-
-```bash
-# Allow only from your local subnet (example for ufw)
-sudo ufw allow from 192.168.1.0/24 to any port 3210
-```
-
-## Uninstallation
-
-To remove Jarvis:
+## Uninstall
 
 ```bash
 bash deploy/systemd/uninstall.sh
 ```
 
-This removes the systemd service but preserves:
-- `~/.config/jarvis/` (configuration)
-- `~/.jarvis/` (data and database)
-
-To completely remove:
-
-```bash
-rm -rf ~/.config/jarvis ~/.jarvis
-```
-
-## Support
-
-For issues, consult:
-- [README.md](../README.md) for user-facing docs
-- [CONFIGURATION.md](../docs/CONFIGURATION.md) for environment variables
-- `journalctl --user -u jarvis -f` for server logs
-- Smoke test: `node tools/sandbox-smoke.mjs` (after building and starting server)
+The uninstall script removes the user services. Configuration and `~/.jarvis` data are retained unless removed separately.

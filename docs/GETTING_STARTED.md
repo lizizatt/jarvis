@@ -1,259 +1,74 @@
-# Getting Started with Jarvis
+# Getting Started
 
-This quick-start guide walks you through installation, configuration, and first use of Jarvis.
+Run repository commands from the Jarvis root.
 
-## 5-Minute Setup
+## Prerequisites
 
-### 1. Verify Prerequisites
+- Node.js 20.19 or newer and npm
+- VS Code 1.125 or newer, with the `code` CLI in `PATH`
+- GitHub Copilot signed in within VS Code
+- Tailscale on the laptop and phone for private remote access
 
-```bash
-# Check all required tools are installed
-node --version      # Must be ≥ 20.19
-npm --version
-gh --version        # GitHub CLI
-copilot --version   # Copilot CLI plugin
+The normal backend is the VS Code worker. The Copilot CLI is not required.
 
-# Test GitHub authentication
-gh auth status
-copilot -p "Reply with: Copilot is ready" --allow-all-tools
-```
-
-### 2. Install Jarvis as a Service
+## Install
 
 ```bash
-cd ~/jarvis
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run install:local --workspace jarvis-copilot-worker
 bash deploy/systemd/install.sh
 ```
 
-This script:
-- Builds the project
-- Creates systemd configuration
-- Starts the service with auto-restart on failure
-- Displays the access URL
+The worker install creates an ignored VSIX, installs it locally, and leaves the artifact under `apps/vscode-worker`. Do not commit it.
 
-### 3. Open Jarvis
+The systemd installer builds Jarvis, creates `~/.config/jarvis/.env` on first use, and enables both user services. It does not install or reload the VS Code extension.
+
+## Connect a Checkout
+
+1. Open the checkout in its own VS Code window.
+2. Reload that window after installing or updating the worker extension.
+3. Run **Jarvis: Connect Copilot Worker** from the Command Palette.
+4. Register the checkout:
 
 ```bash
-# On your laptop, open in a browser:
-http://127.0.0.1:3210
+npm run repo:add -- /absolute/path/to/checkout "Display Name" main
 ```
 
-You should see the Jarvis dashboard. Repository inventory is configured on the laptop.
-
-### 4. Register a Repository
-
-From the Jarvis checkout on the laptop, register the Git root and its main branch:
+5. Confirm the worker and model list are present:
 
 ```bash
-npm run repo:add -- /home/you/src/my-project "My Project" main
+curl -fsS http://127.0.0.1:3210/api/workers
 ```
 
-Refresh the dashboard and confirm the server-managed repository appears.
+Repository-local `AGENTS.md` files govern work in that checkout. `JARVIS_POLICY` is additional text sent to every Jarvis task; it is guidance, not a permission boundary.
 
-### 5. Connect Repository Workers
+## Phone Access
 
-Open each registered repository in its own VS Code window and run **Jarvis: Connect Copilot Worker** once. The enabled state persists for that window profile.
+Keep Jarvis bound to localhost and publish it only to the private Tailnet:
 
-### 6. Start a Task
-
-Click the repository, then:
-1. Enter a task prompt (e.g., "Add unit tests for the auth module")
-2. Click "Start Task"
-3. Watch the agent respond in real time
-
-### 6. (Optional) Set Up Phone Access
-
-On your laptop:
 ```bash
-tailscale up        # Join your Tailnet
 tailscale serve --bg http://127.0.0.1:3210
 ```
 
-Then on your phone (same Tailnet):
-1. Open `https://<laptop-name>.<tailnet>.ts.net/` in a browser
-2. Tap "Install" or "Add to Home Screen" → "Install"
-3. Open from your app drawer; it will receive push notifications
+Open the resulting HTTPS URL on the phone and install the PWA. See [PWA Mobile Setup](PWA_MOBILE_SETUP.md) for browser-specific steps.
 
----
+## Verify
+
+```bash
+systemctl --user is-active jarvis jarvis-terminal-host
+curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:3210/api/workers
+code --list-extensions --show-versions | grep jarvis-local.jarvis-copilot-worker
+```
+
+Both services should report `active`; health should return `ok: true`; and each usable repository should appear in `/api/workers` with at least one model.
 
 ## Next Steps
 
-- **Configuration:** See [CONFIGURATION.md](./CONFIGURATION.md) for env vars and advanced options
-- **Deployment:** See [DEPLOYMENT.md](./DEPLOYMENT.md) for production setup and monitoring
-- **Mobile:** See [PWA_MOBILE_SETUP.md](./PWA_MOBILE_SETUP.md) for phone installation and troubleshooting
-- **API:** See [README.md](../README.md) for full API endpoint list and architecture
-
----
-
-## Common Tasks
-
-### Check Server Status
-
-```bash
-systemctl --user status jarvis
-journalctl --user -u jarvis -f  # Follow logs
-```
-
-### Stop or Restart
-
-```bash
-systemctl --user restart jarvis
-systemctl --user stop jarvis
-```
-
-### View Registered Repositories
-
-```bash
-curl http://127.0.0.1:3210/api/repositories | jq
-```
-
-### Change Agent Policy
-
-Edit `~/.config/jarvis/.env`:
-```bash
-JARVIS_POLICY="Ask before any write operations."
-```
-
-Then restart:
-```bash
-systemctl --user restart jarvis
-```
-
-### Backup Your Data
-
-```bash
-tar czf ~/jarvis-backup.tar.gz ~/.jarvis
-```
-
-### Uninstall Jarvis
-
-```bash
-bash deploy/systemd/uninstall.sh
-# Configuration and data are preserved
-```
-
----
-
-## Troubleshooting
-
-### Server won't start
-```bash
-journalctl --user -u jarvis -n 20  # Check logs
-lsof -i :3210                       # Port in use?
-```
-
-### PWA won't install
-- Use HTTPS (enable Tailscale Serve or set up reverse proxy)
-- Try in a private/incognito window
-- Clear browser cache
-
-### Task hangs
-```bash
-# Check logs
-journalctl --user -u jarvis -f
-
-# Restart server
-systemctl --user restart jarvis
-```
-
-### Can't reach from phone
-- Verify Tailnet connection: `tailscale status`
-- Verify server is running: `systemctl --user status jarvis`
-- Verify Serve is enabled: `tailscale status | grep Serve`
-
----
-
-## Support
-
-- **Full documentation:** [README.md](../README.md)
-- **Architecture & features:** [README.md](../README.md#architecture)
-- **Smoke test:** `npm run build && npm run test:e2e --workspace @jarvis/web`
-- **API endpoints:** [README.md](../README.md#development)
-
-## Key Concepts
-
-**Repository:** A registered Git checkout on your laptop. Jarvis never modifies repositories; it only watches them.
-
-**Task:** A Jarvis conversation executed by the Copilot worker in the matching open VS Code repository window, with a live transcript and optional terminal access.
-
-**Event:** A message, question, or status change during a task (persisted in SQLite).
-
-**Terminal:** A persistent shell session in a repository, accessible from the PWA.
-
-**Preview:** A read-only, path-contained HTML route serving the repository's own HTML files (e.g., docs, generated reports).
-
-**PWA:** Progressive Web App; installs on your phone like a native app, with offline caching and push notifications.
-
----
-
-## Example Workflow
-
-1. **Laptop:** Register two repositories
-   ```bash
-   # Via UI or API
-   curl -X POST http://127.0.0.1:3210/api/repositories \
-     -H 'Content-Type: application/json' \
-     -d '{"name":"Backend","path":"/home/you/backend"}'
-   ```
-
-2. **Phone:** Install PWA (via Tailscale Serve)
-
-3. **Phone:** Start a task in one repository
-   - Prompt: "Add error handling to the auth endpoint"
-   - Agent responds with questions and suggestions
-
-4. **Phone:** Approve a commit
-   - Agent asks for permission
-   - You tap "Approve"
-   - Agent commits and pushes
-
-5. **Laptop:** Check the repository
-   - New branch created with agent's changes
-   - Task transcript saved in `~/.jarvis/jarvis.sqlite3`
-
-6. **Phone:** Resume the task or start a new one
-   - Agent recalls context from the transcript
-   - Workflow continues
-
----
-
-## Architecture at a Glance
-
-```
-You (on laptop)
-    ↓
-Jarvis Server (Node.js + SQLite)
-    ├─ Copilot CLI adapter
-    ├─ Git status worker
-    ├─ Terminal bridge (node-pty)
-    ├─ Web Push sender
-    └─ Static web assets (React PWA)
-    ↓
-Jarvis PWA (on phone)
-    ├─ Task canvas & chat
-    ├─ Terminal tab
-    ├─ Diff & PR views
-    ├─ Web Push notifications
-    └─ Offline support
-
-All connected via:
-  - Tailscale (private, encrypted)
-  - Local Wi-Fi (LAN)
-  - Localhost (laptop only)
-```
-
-No data leaves your laptop. No cloud accounts. No credentials stored in Jarvis.
-
----
-
-## Security Reminders
-
-- **Bind to private networks only** (Tailscale, LAN, localhost)
-- **Full shell access is intentional** — the PWA mirrors your laptop's permissions
-- **Credentials are not copied** — Jarvis uses existing GitHub CLI auth
-- **Data is local** — `~/.jarvis` stays on your laptop
-- **Device revocation:** If your phone is lost, revoke it from Tailscale ACLs
-
----
-
-Happy coding! 🚀
+- [Agent workflow and validation](../AGENTS.md)
+- [Deployment and recovery](DEPLOYMENT.md)
+- [Configuration](CONFIGURATION.md)
