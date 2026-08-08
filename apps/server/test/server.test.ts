@@ -126,14 +126,16 @@ describe('server MVP', () => {
     expect((await app.inject({ method: 'GET', url: '/api/repositories/does-not-exist/preview-files' })).statusCode).toBe(404);
   });
 
-  it('serves README.md through the repository preview route as readable text', async () => {
+  it('serves README.md through the repository preview route as escaped HTML', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));
     const repository = await register(app, sandbox.repository);
+    await writeFile(join(sandbox.repository, 'README.md'), '# Title <script>alert(1)</script>\n');
     const response = await app.inject({ method: 'GET', url: `/previews/${repository.id}/repo/README.md` });
     expect(response.statusCode).toBe(200);
-    expect(response.headers['content-type']).toContain('text/plain');
-    expect(response.body).toContain('fixture');
+    expect(response.headers['content-type']).toContain('text/html');
+    expect(response.body).toContain('&#60;script&#62;');
+    expect(response.body).not.toContain('<script>');
   });
 
   it('reports status for a repository before its first commit', async () => {

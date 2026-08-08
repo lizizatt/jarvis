@@ -4,9 +4,12 @@ import { extname, join, resolve, sep } from 'node:path';
 const TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.gif': 'image/gif', '.htm': 'text/html; charset=utf-8',
   '.html': 'text/html; charset=utf-8', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8', '.markdown': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8',
-  '.png': 'image/png', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8', '.webp': 'image/webp',
+  '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8',
+  '.webp': 'image/webp',
 };
+
+// Some mobile browsers won't render text/plain inline inside an iframe, so markdown is wrapped as real HTML instead.
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown']);
 
 export async function ensureLanding(previewsRoot: string, repositoryId: string, repositoryName: string): Promise<string> {
   const directory = join(previewsRoot, repositoryId);
@@ -30,7 +33,14 @@ export async function readPreviewFile(root: string, requestedPath: string): Prom
   }
   const file = await stat(canonical);
   if (!file.isFile()) throw new PreviewError('Preview path is not a file', 404);
-  return { body: await readFile(canonical), contentType: TYPES[extname(canonical).toLowerCase()] ?? 'application/octet-stream' };
+  const extension = extname(canonical).toLowerCase();
+  const raw = await readFile(canonical);
+  if (MARKDOWN_EXTENSIONS.has(extension)) return { body: renderMarkdownPreview(raw.toString('utf8')), contentType: 'text/html; charset=utf-8' };
+  return { body: raw, contentType: TYPES[extension] ?? 'application/octet-stream' };
+}
+
+function renderMarkdownPreview(source: string): Buffer {
+  return Buffer.from(`<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:16px;background:#fff;color:#1b1f1e;font:14px/1.6 -apple-system,system-ui,sans-serif}pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:inherit}</style><pre>${escapeHtml(source)}</pre>`);
 }
 
 export class PreviewError extends Error { constructor(message: string, readonly statusCode: number) { super(message); } }
