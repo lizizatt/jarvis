@@ -114,6 +114,12 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     try { return await tasks.stop(request.params.id, request.body.stoppedBy?.trim() || 'user'); }
     catch (error) { return sendKnownError(reply, error); }
   });
+  app.delete<{ Params: IdParams }>('/api/tasks/:id', async (request, reply) => {
+    const task = store.getTask(request.params.id);
+    if (!task) return reply.code(404).send({ error: 'Task not found' });
+    if (['starting', 'running', 'stopping'].includes(task.state)) return reply.code(409).send({ error: 'Task is still active' });
+    return store.deleteTask(request.params.id) ? reply.code(204).send() : reply.code(404).send({ error: 'Task not found' });
+  });
 
   app.get('/ws/tasks', { websocket: true }, (socket, request) => {
     const taskId = (request.query as { taskId?: string }).taskId;

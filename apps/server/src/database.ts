@@ -150,6 +150,10 @@ export class Store {
     return this.getTask(id);
   }
 
+  deleteTask(id: string): boolean {
+    return this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id).changes > 0;
+  }
+
   interruptActiveTasks(): number {
     const placeholders = ACTIVE_TASK_STATES.map(() => '?').join(',');
     return this.db.prepare(`UPDATE tasks SET state = 'interrupted', updated_at = ? WHERE state IN (${placeholders})`)

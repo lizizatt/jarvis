@@ -83,6 +83,7 @@ export const api = {
   message: async (taskId: string, message: string, kind: 'follow_up' | 'answer' | 'approval' = 'follow_up', questionId?: string) =>
     task(await request<WireTask>(`/api/tasks/${taskId}/messages`, { method: 'POST', body: JSON.stringify({ prompt: message, kind, questionId }) })),
   stop: async (taskId: string) => task(await request<WireTask>(`/api/tasks/${taskId}/stop`, { method: 'POST', body: JSON.stringify({ confirmed: true, stoppedBy: 'pwa' }) })),
+  deleteTask: (taskId: string) => request<void>(`/api/tasks/${taskId}`, { method: 'DELETE' }),
   diff: (id: string, mode: 'worktree' | 'staged') => requestText(`/api/repositories/${id}/diff?staged=${mode === 'staged'}`),
   statusFiles: (id: string) => request<RepositoryStatusFile[]>(`/api/repositories/${id}/status-files`),
   previewFiles: (id: string) => request<PreviewFile[]>(`/api/repositories/${id}/preview-files`),

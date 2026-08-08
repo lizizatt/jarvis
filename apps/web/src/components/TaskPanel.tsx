@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Square } from 'lucide-react';
+import { ChevronsDown, ChevronsUp, Send, Square } from 'lucide-react';
 import { api } from '../api';
 import { useTaskStream } from '../useTaskStream';
 import { TaskStatusBadge } from './Status';
@@ -10,6 +10,7 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
   const [task, setTask] = useState(initialTask);
   const [sending, setSending] = useState(false);
   const events = useTaskStream(task.id);
+  const topRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setTask(initialTask); }, [initialTask]);
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' }); }, [events.length]);
@@ -17,6 +18,9 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
     const lifecycle = [...events].reverse().find((event) => event.type === 'task_state') as (typeof events[number] & { state?: TaskSummary['status'] }) | undefined;
     if (lifecycle?.state && lifecycle.state !== task.status) { const updated = { ...task, status: lifecycle.state }; setTask(updated); onTaskChange(updated); }
   }, [events, onTaskChange, task]);
+
+  function scrollToTop() { topRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }
+  function scrollToBottom() { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' }); }
 
   async function send(text: string, questionId?: string, approval = false) {
     if (!text.trim() || sending || task.status === 'stopping') return;
@@ -50,6 +54,7 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
     ? resolvedModel.family ?? resolvedModel.name ?? task.modelId
     : resolvedModel?.name ?? resolvedModel?.family ?? task.modelId;
   return <section className="task-panel" data-testid={`task-${task.id}`}>
+    <div ref={topRef} className="scroll-controls"><button className="icon-button" aria-label="Scroll to top" onClick={scrollToTop} data-testid="scroll-top"><ChevronsUp /></button><button className="icon-button" aria-label="Scroll to bottom" onClick={scrollToBottom} data-testid="scroll-bottom"><ChevronsDown /></button></div>
     <div className="task-meta"><TaskStatusBadge status={task.status} /><span className="session-id">Model {modelLabel}</span>{task.nativeSessionId && <span className="session-id">Session {task.nativeSessionId}</span>}</div>
     <Timeline events={events} onAnswer={send} />
     <div ref={endRef} className="scroll-anchor" />
