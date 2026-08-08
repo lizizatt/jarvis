@@ -27,11 +27,12 @@ export class TaskManager {
     private readonly push: PushService, private readonly config: ServerConfig,
     private readonly workers?: WorkerManager) {}
 
-  create(repository: Repository, prompt: string): Task {
+  create(repository: Repository, prompt: string, modelId = 'auto'): Task {
     this.assertBackendAvailable(repository);
+    this.assertModelAvailable(repository, modelId);
     const now = new Date().toISOString();
     const task: Task = { id: randomUUID(), repositoryId: repository.id, sessionId: randomUUID(), state: 'starting',
-      createdAt: now, updatedAt: now, stoppedBy: null, stoppedAt: null, exitCode: null };
+      createdAt: now, updatedAt: now, stoppedBy: null, stoppedAt: null, exitCode: null, modelId };
     this.store.insertTask(task);
     this.emit(task.id, 'user_message', { text: prompt });
     try { this.launch(task, repository, prompt); }
@@ -106,7 +107,8 @@ export class TaskManager {
     if (this.config.agentBackend === 'worker') throw new Error(`No connected VS Code worker for ${repository.path}`);
     const effectivePrompt = [this.config.policy, prompt].filter(Boolean).join('\n\n');
     const args = ['-C', repository.path, '--session-id', task.sessionId, '-p', effectivePrompt, '--allow-all',
-      '--output-format', 'json', '--stream', 'on', '--no-color', '--no-auto-update', '--no-remote-export'];
+      '--output-format', 'json', '--stream', 'on', '--no-color', '--no-auto-update', '--no-remote-export',
+      ...(task.modelId === 'auto' ? [] : ['--model', task.modelId])];
     const child = spawn(this.config.agentExecutable, args, {
       cwd: repository.path,
       detached: true,
@@ -144,6 +146,17 @@ export class TaskManager {
   private assertBackendAvailable(repository: Repository): void {
     if (this.config.agentBackend === 'worker' && !this.workers?.hasWorker(repository.path)) {
       throw new Error(`No connected VS Code worker for ${repository.path}. Open that repository in VS Code and connect Jarvis Copilot Worker.`);
+    }
+  }
+
+  private assertModelAvailable(repository: Repository, modelId: string): void {
+    if (this.config.agentBackend === 'cli') return;
+    const models = this.workers?.modelsFor(repository.path) ?? [];
+    if (this.config.agentBackend === 'worker' && models.length === 0) {
+      throw new Error(`No Copilot model is available for ${repository.path}`);
+    }
+    if (modelId !== 'auto' && models.length > 0 && !models.some((model) => model.id === modelId)) {
+      throw new Error(`Model ${modelId} is not available for ${repository.path}`);
     }
   }
 
@@ -209,7 +222,6 @@ export class TaskManager {
     this.emit(taskId, 'agent_event', value);
     const text = JSON.stringify(value);
     if (requiresUserInput(value)) {
-      this.emit(taskId, 'question', { source: 'structured', event: value });
       const task = this.store.getTask(taskId);
       void this.push.send({ title: 'Agent needs input', body: 'Open Jarvis to respond',
         url: task ? `/repositories/${task.repositoryId}?task=${taskId}` : '/' });
@@ -242,10 +254,7 @@ function requiresUserInput(value: unknown): boolean {
   const event = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
   const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {};
   const eventType = [event.type, data.type].find((candidate): candidate is string => typeof candidate === 'string') ?? '';
-  const toolName = [event.toolName, event.name, data.toolName, data.name]
-    .find((candidate): candidate is string => typeof candidate === 'string') ?? '';
-  return /(?:^|[._-])(question|approval|required[_-]?input|ask[_-]?user)(?:$|[._-])/i.test(eventType)
-    || /^(question|approval|required[_-]?input|ask[_-]?user)$/i.test(toolName);
+  return /(?:^|[._-])(question|approval|required[_-]?input)(?:$|[._-])/i.test(eventType);
 }
 
 export class JsonLineParser {

@@ -53,6 +53,7 @@ const migrations = [
   `,
   `ALTER TABLE terminal_sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'new';`,
   `ALTER TABLE repositories DROP COLUMN instructions;`,
+  `ALTER TABLE tasks ADD COLUMN model_id TEXT NOT NULL DEFAULT 'auto';`,
 ];
 
 interface RepositoryRow {
@@ -63,6 +64,7 @@ interface RepositoryRow {
 interface TaskRow {
   id: string; repository_id: string; session_id: string; state: TaskState; created_at: string;
   updated_at: string; stopped_by: string | null; stopped_at: string | null; exit_code: number | null;
+  model_id: string;
 }
 
 interface EventRow {
@@ -120,10 +122,10 @@ export class Store {
 
   insertTask(task: Task): Task {
     this.db.prepare(`INSERT INTO tasks
-      (id, repository_id, session_id, state, created_at, updated_at, stopped_by, stopped_at, exit_code)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (id, repository_id, session_id, state, created_at, updated_at, stopped_by, stopped_at, exit_code, model_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(task.id, task.repositoryId, task.sessionId, task.state, task.createdAt, task.updatedAt,
-        task.stoppedBy, task.stoppedAt, task.exitCode);
+        task.stoppedBy, task.stoppedAt, task.exitCode, task.modelId);
     return task;
   }
 
@@ -231,5 +233,5 @@ function mapRepository(row: RepositoryRow): Repository {
 function mapTask(row: TaskRow): Task {
   return { id: row.id, repositoryId: row.repository_id, sessionId: row.session_id, state: row.state,
     createdAt: row.created_at, updatedAt: row.updated_at, stoppedBy: row.stopped_by,
-    stoppedAt: row.stopped_at, exitCode: row.exit_code };
+    stoppedAt: row.stopped_at, exitCode: row.exit_code, modelId: row.model_id };
 }

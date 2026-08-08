@@ -2,12 +2,12 @@ import { realpath } from 'node:fs/promises';
 import type { WebSocket } from 'ws';
 import type { Repository, Task, TaskEvent } from './types.js';
 
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 const HELLO_TIMEOUT_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
 interface WorkerHello {
-  version: 1;
+  version: 2;
   type: 'hello';
   workerId: string;
   windowName: string;
@@ -15,7 +15,7 @@ interface WorkerHello {
   models: ModelMetadata[];
 }
 
-interface ModelMetadata {
+export interface ModelMetadata {
   id: string;
   name: string;
   vendor: string;
@@ -25,7 +25,7 @@ interface ModelMetadata {
 }
 
 interface WorkerEventMessage {
-  version: 1;
+  version: 2;
   type: 'event';
   taskId: string;
   kind: string;
@@ -33,7 +33,7 @@ interface WorkerEventMessage {
 }
 
 interface WorkerTerminalMessage {
-  version: 1;
+  version: 2;
   type: 'complete' | 'failed' | 'stopped';
   taskId: string;
   error?: string;
@@ -105,6 +105,10 @@ export class WorkerManager {
     return [...this.workers.values()].some((worker) => worker.workspaceRoots.includes(repositoryPath));
   }
 
+  modelsFor(repositoryPath: string): ModelMetadata[] {
+    return [...this.workers.values()].find((worker) => worker.workspaceRoots.includes(repositoryPath))?.models ?? [];
+  }
+
   dispatch(task: Task, repository: Repository, policy: string, prompt: string, history: TaskEvent[],
     callbacks: WorkerTurnCallbacks): { workerId: string; cancel: () => void; release: () => void } | undefined {
     const worker = [...this.workers.values()].find((candidate) => candidate.workspaceRoots.includes(repository.path));
@@ -113,7 +117,7 @@ export class WorkerManager {
     worker.activeTaskIds.push(task.id);
     try {
       worker.socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'turn', taskId: task.id,
-        sessionId: task.sessionId, repositoryPath: repository.path,
+        sessionId: task.sessionId, repositoryPath: repository.path, modelId: task.modelId,
         policy, prompt, history: modelHistory(history, prompt) }));
     } catch {
       this.release(worker, task.id);

@@ -9,6 +9,16 @@ export interface TaskSummary {
   startedAt?: string;
   finishedAt?: string;
   nativeSessionId?: string;
+  modelId: string;
+}
+
+export interface ModelMetadata {
+  id: string;
+  name: string;
+  vendor: string;
+  family: string;
+  version: string;
+  maxInputTokens: number;
 }
 
 export interface RepositoryStatus {

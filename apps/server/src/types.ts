@@ -19,6 +19,7 @@ export interface Task {
   stoppedBy: string | null;
   stoppedAt: string | null;
   exitCode: number | null;
+  modelId: string;
 }
 
 export interface TaskEvent {

@@ -71,6 +71,11 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   app.get<{ Params: IdParams; Querystring: { staged?: string } }>('/api/repositories/:id/diff', async (request, reply) =>
     withRepository(store, request.params.id, reply, (path) => repositoryDiff(path, request.query.staged === 'true')));
   app.get<{ Params: IdParams }>('/api/repositories/:id/pull-request', async (request, reply) => withRepository(store, request.params.id, reply, pullRequest));
+  app.get<{ Params: IdParams }>('/api/repositories/:id/models', async (request, reply) => {
+    const repository = store.getRepository(request.params.id);
+    if (!repository) return reply.code(404).send({ error: 'Repository not found' });
+    return workers.modelsFor(repository.path);
+  });
 
   app.get<{ Querystring: { repositoryId?: string } }>('/api/tasks', async (request) =>
     store.listTasks(request.query.repositoryId).map((task) => taskSummary(store, task)));
@@ -78,11 +83,11 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     if (!store.getRepository(request.params.id)) return reply.code(404).send({ error: 'Repository not found' });
     return store.listTasks(request.params.id).map((task) => taskSummary(store, task));
   });
-  app.post<{ Params: IdParams; Body: { prompt?: string } }>('/api/repositories/:id/tasks', async (request, reply) => {
+  app.post<{ Params: IdParams; Body: { prompt?: string; modelId?: string } }>('/api/repositories/:id/tasks', async (request, reply) => {
     const repository = store.getRepository(request.params.id);
     if (!repository) return reply.code(404).send({ error: 'Repository not found' });
     if (!request.body?.prompt?.trim()) return reply.code(400).send({ error: 'prompt is required' });
-    try { return reply.code(201).send(taskSummary(store, tasks.create(repository, request.body.prompt))); }
+    try { return reply.code(201).send(taskSummary(store, tasks.create(repository, request.body.prompt, request.body.modelId?.trim() || 'auto'))); }
     catch (error) { return sendKnownError(reply, error); }
   });
   app.get<{ Params: IdParams }>('/api/tasks/:id', async (request, reply) => {

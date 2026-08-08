@@ -1,4 +1,4 @@
-export const WORKER_PROTOCOL_VERSION = 1 as const;
+export const WORKER_PROTOCOL_VERSION = 2 as const;
 
 export interface ModelMetadata {
 	id: string;
@@ -29,6 +29,7 @@ export interface TurnMessage {
 	taskId: string;
 	sessionId: string;
 	repositoryPath: string;
+	modelId: string;
 	policy: string;
 	prompt: string;
 	history: TurnHistoryEntry[];
@@ -56,11 +57,21 @@ export interface EventMessage {
 	payload: unknown;
 }
 
+export interface TerminalFailurePayload {
+	error: string;
+	code?: string;
+	retriable?: boolean;
+}
+
+export interface TerminalSuccessPayload {
+	text?: string;
+}
+
 export interface TerminalMessage {
 	type: 'complete' | 'failed' | 'stopped';
 	version: typeof WORKER_PROTOCOL_VERSION;
 	taskId: string;
-	payload?: unknown;
+	payload?: TerminalSuccessPayload | TerminalFailurePayload;
 }
 
 export type WorkerMessage = HelloMessage | EventMessage | TerminalMessage;
@@ -102,6 +113,7 @@ export function parseServerMessage(raw: string): ServerMessage {
 			taskId: requiredString(value, 'taskId'),
 			sessionId: requiredString(value, 'sessionId'),
 			repositoryPath: requiredString(value, 'repositoryPath'),
+			modelId: requiredString(value, 'modelId'),
 			policy: requiredString(value, 'policy', true),
 			prompt: requiredString(value, 'prompt'),
 			history: value.history,

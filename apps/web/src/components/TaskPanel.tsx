@@ -44,8 +44,13 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
   }
 
   const active = ['queued', 'starting', 'running', 'stopping'].includes(task.status);
+  const resolvedModel = [...events].reverse().map((event) => (event as typeof event & { model?: { id?: string; name?: string; family?: string } }).model)
+    .find((model) => model?.name || model?.family);
+  const modelLabel = resolvedModel?.id === 'auto'
+    ? resolvedModel.family ?? resolvedModel.name ?? task.modelId
+    : resolvedModel?.name ?? resolvedModel?.family ?? task.modelId;
   return <section className="task-panel" data-testid={`task-${task.id}`}>
-    <div className="task-meta"><TaskStatusBadge status={task.status} />{task.nativeSessionId && <span className="session-id">Session {task.nativeSessionId}</span>}</div>
+    <div className="task-meta"><TaskStatusBadge status={task.status} /><span className="session-id">Model {modelLabel}</span>{task.nativeSessionId && <span className="session-id">Session {task.nativeSessionId}</span>}</div>
     <Timeline events={events} onAnswer={send} />
     <div ref={endRef} />
     <div className="task-composer">

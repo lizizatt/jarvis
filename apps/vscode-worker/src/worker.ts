@@ -181,7 +181,7 @@ export class WorkerClient implements vscode.Disposable {
 				throw new Error('Repository is not an exact open workspace root');
 			}
 			turn.repositoryPath = repositoryPath;
-			const model = chooseModel(this.models);
+			const model = chooseModel(this.models, turn.modelId);
 			if (!model) {
 				throw new Error('No Copilot model is available');
 			}
@@ -272,14 +272,16 @@ export async function runCapabilityTest(): Promise<string> {
 	return `${model.name}: ${text}`;
 }
 
-function chooseModel(models: readonly vscode.LanguageModelChat[]): vscode.LanguageModelChat | undefined {
-	const preferred = vscode.workspace.getConfiguration('jarvisCopilotWorker').get<string>('preferredModel', '').trim().toLowerCase();
-	if (!preferred) {
+function chooseModel(models: readonly vscode.LanguageModelChat[], requestedModel?: string): vscode.LanguageModelChat | undefined {
+	const preferred = (requestedModel || vscode.workspace.getConfiguration('jarvisCopilotWorker').get<string>('preferredModel', '')).trim().toLowerCase();
+	if (!preferred || preferred === 'auto') {
 		return models.find(model => model.id === 'auto') ?? models[0];
 	}
-	return models.find(model => [model.id, model.family, model.name].some(value => value.toLowerCase() === preferred))
-		?? models.find(model => [model.id, model.family, model.name].some(value => value.toLowerCase().includes(preferred)))
-		?? models[0];
+	const exact = models.find(model => [model.id, model.family, model.name].some(value => value.toLowerCase() === preferred));
+	if (requestedModel) {
+		return exact;
+	}
+	return exact ?? models.find(model => [model.id, model.family, model.name].some(value => value.toLowerCase().includes(preferred))) ?? models[0];
 }
 
 function modelMetadata(model: vscode.LanguageModelChat): ModelMetadata {

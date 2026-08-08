@@ -27,7 +27,7 @@ suite('command execution', () => {
 		if (childPid === undefined) {
 			assert.fail('Child PID was not emitted');
 		}
-		assert.strictEqual(isProcessRunning(childPid), false);
+		await waitForProcessExit(childPid);
 	});
 });
 
@@ -46,4 +46,15 @@ function isProcessRunning(pid: number): boolean {
 		}
 		throw error;
 	}
+}
+
+async function waitForProcessExit(pid: number): Promise<void> {
+	const deadline = Date.now() + 2_000;
+	while (Date.now() < deadline) {
+		if (!isProcessRunning(pid)) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 20));
+	}
+	assert.strictEqual(isProcessRunning(pid), false);
 }

@@ -13,13 +13,33 @@ function XtermSession({ session, onExit }: { session: TerminalSession; onExit: (
   onExitRef.current = onExit;
   useEffect(() => {
     if (!host.current) return;
-    const terminal = new Terminal({ cursorBlink: true, convertEol: true, fontFamily: '"IBM Plex Mono", monospace', fontSize: 13, theme: { background: '#10211d', foreground: '#e7eee9', cursor: '#f6c453', selectionBackground: '#386c5e' } });
-    const fit = new FitAddon(); terminal.loadAddon(fit); terminal.open(host.current); fit.fit();
+    const terminal = new Terminal({
+      cursorBlink: true,
+      convertEol: true,
+      fontFamily: '"IBM Plex Mono", monospace',
+      fontSize: 13,
+      scrollback: 5_000,
+      theme: { background: '#10211d', foreground: '#e7eee9', cursor: '#f6c453', selectionBackground: '#386c5e' },
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminal.open(host.current);
+    terminal.textarea?.setAttribute('enterkeyhint', 'send');
+    terminal.textarea?.setAttribute('autocapitalize', 'off');
+    terminal.textarea?.setAttribute('autocomplete', 'off');
+    terminal.textarea?.setAttribute('autocorrect', 'off');
+    terminal.textarea?.setAttribute('spellcheck', 'false');
+    fit.fit();
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     let socket: WebSocket | undefined;
     let reconnectTimer: number | undefined;
     let retry = 0;
     let active = true;
+    let viewportHandler: (() => void) | undefined;
+    const focusTerminal = () => {
+      terminal.focus();
+      window.setTimeout(() => terminal.focus(), 0);
+    };
     function connect() {
       socket = new WebSocket(`${protocol}//${location.host}/ws/terminals/${encodeURIComponent(session.id)}`);
       socket.addEventListener('open', () => { retry = 0; socket?.send(JSON.stringify({ action: 'resize', cols: terminal.cols, rows: terminal.rows })); });
@@ -36,10 +56,35 @@ function XtermSession({ session, onExit }: { session: TerminalSession; onExit: (
     }
     connect();
     const send = (value: object) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
+    const fitAndResize = () => {
+      fit.fit();
+      send({ action: 'resize', cols: terminal.cols, rows: terminal.rows });
+    };
     const input = terminal.onData((data) => send({ action: 'input', data }));
-    const observer = new ResizeObserver(() => { fit.fit(); send({ action: 'resize', cols: terminal.cols, rows: terminal.rows }); });
+    const observer = new ResizeObserver(() => fitAndResize());
     observer.observe(host.current);
-    return () => { active = false; if (reconnectTimer) window.clearTimeout(reconnectTimer); observer.disconnect(); input.dispose(); socket?.close(); terminal.dispose(); };
+    host.current.addEventListener('click', focusTerminal);
+    host.current.addEventListener('touchstart', focusTerminal, { passive: true });
+    if (window.visualViewport) {
+      viewportHandler = () => window.requestAnimationFrame(() => fitAndResize());
+      window.visualViewport.addEventListener('resize', viewportHandler);
+      window.visualViewport.addEventListener('scroll', viewportHandler);
+    }
+    focusTerminal();
+    return () => {
+      active = false;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      if (viewportHandler && window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', viewportHandler);
+        window.visualViewport.removeEventListener('scroll', viewportHandler);
+      }
+      host.current?.removeEventListener('click', focusTerminal);
+      host.current?.removeEventListener('touchstart', focusTerminal);
+      observer.disconnect();
+      input.dispose();
+      socket?.close();
+      terminal.dispose();
+    };
   }, [session.id]);
   return <div className="terminal-host" ref={host} data-testid="terminal" />;
 }

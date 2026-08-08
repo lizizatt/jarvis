@@ -36,12 +36,108 @@ Jarvis is a TypeScript control plane that runs on your laptop, exposing a respon
 - **Node.js** ≥ 20.19 (check: `node --version`)
 - **npm** (comes with Node.js)
 - **VS Code 1.125+** signed into GitHub Copilot, with the local Jarvis Copilot Worker extension installed
-  - Authenticate: `gh auth login`
-  - Test: `copilot --version`
 - **Tailscale** (optional but recommended for phone access)
   - Install: https://tailscale.com/download
   - Authenticate: `tailscale up`
   - Phone: join the same Tailnet
+
+## How to Spin Up Jarvis
+
+This is the operational runbook for agents and humans bringing up Jarvis from a fresh checkout. Run all repository commands from the Jarvis root.
+
+### First-time installation
+
+1. Install dependencies and verify the checkout:
+
+  ```bash
+  npm ci
+  npm run lint
+  npm run typecheck
+  npm test
+  ```
+
+2. Build the server, PWA, and VS Code worker:
+
+  ```bash
+  npm run build
+  ```
+
+3. Package and install the local worker extension:
+
+  ```bash
+  cd apps/vscode-worker
+  npx --yes @vscode/vsce package \
+    --no-dependencies \
+    --allow-missing-repository \
+    --skip-license \
+    -o jarvis-copilot-worker.vsix
+  code --install-extension jarvis-copilot-worker.vsix --force
+  cd ../..
+  ```
+
+  The VSIX is a generated, ignored artifact. Do not add it to Git.
+
+4. Install and start the per-user services:
+
+  ```bash
+  bash deploy/systemd/install.sh
+  ```
+
+  This installs and enables both `jarvis.service` and `jarvis-terminal-host.service`. It also copies `.env.sample` to `~/.config/jarvis/.env` on first installation.
+
+5. Open each checkout Jarvis should control in its own VS Code window. In each window, run **Jarvis: Connect Copilot Worker** from the Command Palette once. The enabled state persists and the worker reconnects automatically while that window remains open.
+
+6. Register each checkout with the running server:
+
+  ```bash
+  npm run repo:add -- /absolute/path/to/checkout "Display Name" main
+  ```
+
+7. Optionally expose Jarvis to the same private Tailnet as the phone:
+
+  ```bash
+  tailscale serve --bg http://127.0.0.1:3210
+  ```
+
+### Normal startup or update
+
+After pulling changes, rebuild and restart both services:
+
+```bash
+npm ci
+npm run build
+systemctl --user restart jarvis-terminal-host jarvis
+```
+
+If `apps/vscode-worker` changed, repeat the package/install commands above and reload each registered VS Code window so the new extension host activates. Keep every registered checkout open in a separate VS Code window.
+
+### Verify the deployment
+
+```bash
+systemctl --user is-active jarvis jarvis-terminal-host
+curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:3210/api/workers
+code --list-extensions --show-versions | grep jarvis-local.jarvis-copilot-worker
+```
+
+Expected results:
+
+- both services report `active`;
+- health returns `{"ok":true,...}`;
+- `/api/workers` contains one worker per open registered checkout and a non-empty model list;
+- the installed extension is `jarvis-local.jarvis-copilot-worker`;
+- `http://127.0.0.1:3210` loads the dashboard locally;
+- the Tailscale Serve HTTPS URL loads from a device on the same Tailnet.
+
+Useful recovery commands:
+
+```bash
+journalctl --user -u jarvis -n 100 --no-pager
+journalctl --user -u jarvis-terminal-host -n 100 --no-pager
+systemctl --user restart jarvis-terminal-host jarvis
+```
+
+If a repository is missing from `/api/workers`, open that exact checkout as a VS Code workspace, confirm Copilot is signed in, and run **Jarvis: Connect Copilot Worker**. Jarvis intentionally rejects tasks when the matching checkout worker or its model catalog is unavailable.
 
 ## Installation & Build
 

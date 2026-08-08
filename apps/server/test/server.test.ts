@@ -32,7 +32,7 @@ describe('server MVP', () => {
     const now = new Date().toISOString();
     store.insertRepository({ id: 'repo', name: 'Repo', path: sandbox.repository, defaultBranch: 'main', createdAt: now, updatedAt: now });
     store.insertTask({ id: 'task', repositoryId: 'repo', sessionId: 'session', state: 'running', createdAt: now,
-      updatedAt: now, stoppedBy: null, stoppedAt: null, exitCode: null });
+      updatedAt: now, stoppedBy: null, stoppedAt: null, exitCode: null, modelId: 'auto' });
     store.close();
 
     const app = await trackedApp(configuration(sandbox.dataDir));
@@ -87,7 +87,8 @@ describe('server MVP', () => {
     await waitFor(async () => (await taskFrom(app, task.id)).state === 'completed');
     const firstEvents = (await app.inject({ method: 'GET', url: `/api/tasks/${task.id}/events` })).json();
     expect(firstEvents.map((event: { sequence: number }) => event.sequence).every((sequence: number, index: number) => sequence === index + 1)).toBe(true);
-    expect(firstEvents.some((event: { kind: string }) => event.kind === 'question')).toBe(true);
+    expect(firstEvents.some((event: { kind: string; payload?: { type?: string; text?: string } }) =>
+      event.kind === 'agent_event' && event.payload?.type === 'question' && event.payload.text === 'Choose one')).toBe(true);
     expect(firstEvents.some((event: { kind: string }) => event.kind === 'policy_denial')).toBe(true);
     expect(firstEvents.find((event: { kind: string }) => event.kind === 'lifecycle').payload.args).toEqual(expect.arrayContaining([
       '-C', sandbox.repository, '--session-id', task.sessionId, '--allow-all', '--output-format', 'json', '--stream', 'on',
@@ -181,25 +182,28 @@ describe('server MVP', () => {
 
     expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()).toMatchObject([{
       workerId: 'test-worker', windowName: 'test-window', workspaceRoots: [sandbox.repository],
-      models: [expect.objectContaining({ id: 'test-model', vendor: 'copilot' })],
+      models: expect.arrayContaining([expect.objectContaining({ id: 'auto', vendor: 'copilot' })]),
       activeTaskIds: [],
     }]);
     const task = (await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
       payload: { prompt: 'worker first' } })).json() as Task;
     const firstTurn = await takeWorkerMessage(worker, 'turn');
-    expect(firstTurn).toMatchObject({ version: 1, taskId: task.id, sessionId: task.sessionId,
-      policy: 'TEST POLICY', prompt: 'worker first', repositoryPath: sandbox.repository });
+    expect(firstTurn).toMatchObject({ version: 2, taskId: task.id, sessionId: task.sessionId,
+      policy: 'TEST POLICY', prompt: 'worker first', repositoryPath: sandbox.repository, modelId: 'auto' });
     expect(firstTurn.history).toEqual([]);
     expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activeTaskIds).toEqual([task.id]);
 
-    worker.socket.send(JSON.stringify({ version: 1, type: 'event', taskId: task.id,
-      kind: 'question', payload: { message: 'Choose a path' } }));
-    worker.socket.send(JSON.stringify({ version: 1, type: 'event', taskId: task.id,
+    worker.socket.send(JSON.stringify({ version: 2, type: 'event', taskId: task.id,
+      kind: 'question', payload: { type: 'question', questionId: 'question-1', prompt: 'Choose a path', choices: ['A', 'B'] } }));
+    worker.socket.send(JSON.stringify({ version: 2, type: 'event', taskId: task.id,
       kind: 'tool-completed', payload: { toolName: 'edit', message: 'Changed a file' } }));
-    worker.socket.send(JSON.stringify({ version: 1, type: 'complete', taskId: task.id }));
+    worker.socket.send(JSON.stringify({ version: 2, type: 'complete', taskId: task.id }));
     await waitFor(async () => (await taskFrom(app, task.id)).state === 'completed');
     const firstEvents = (await app.inject({ method: 'GET', url: `/api/tasks/${task.id}/events` })).json();
-    expect(firstEvents.some((event: { kind: string }) => event.kind === 'question')).toBe(true);
+    expect(firstEvents.filter((event: { kind: string; payload?: { type?: string; prompt?: string } }) =>
+      event.kind === 'agent_event' && event.payload?.type === 'question')).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ prompt: 'Choose a path' }) }),
+    ]);
     expect(firstEvents.map((event: { sequence: number }) => event.sequence)
       .every((sequence: number, index: number) => sequence === index + 1)).toBe(true);
 
@@ -208,8 +212,31 @@ describe('server MVP', () => {
     const secondTurn = await takeWorkerMessage(worker, 'turn');
     expect(secondTurn).toMatchObject({ taskId: task.id, sessionId: task.sessionId, prompt: 'worker second' });
     expect(secondTurn.history).toEqual(expect.arrayContaining([{ role: 'user', content: 'worker first' }]));
-    worker.socket.send(JSON.stringify({ version: 1, type: 'complete', taskId: task.id }));
+    worker.socket.send(JSON.stringify({ version: 2, type: 'complete', taskId: task.id }));
     await waitFor(async () => (await taskFrom(app, task.id)).state === 'completed');
+    worker.socket.close();
+  });
+
+  it('persists and dispatches a selected conversation model', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    const worker = await connectWorker(address, sandbox.repository);
+    const models = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/models` })).json();
+    expect(models.map((model: { id: string }) => model.id)).toEqual(expect.arrayContaining(['auto', 'test-model']));
+
+    const created = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
+      payload: { prompt: 'selected model', modelId: 'test-model' } });
+    expect(created.json().modelId).toBe('test-model');
+    expect(await takeWorkerMessage(worker, 'turn')).toMatchObject({ modelId: 'test-model' });
+    worker.socket.send(JSON.stringify({ version: 2, type: 'complete', taskId: created.json().id }));
+    await waitFor(async () => (await taskFrom(app, created.json().id)).state === 'completed');
+
+    const unavailable = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
+      payload: { prompt: 'bad model', modelId: 'not-a-model' } });
+    expect(unavailable.statusCode).toBe(400);
+    expect(unavailable.json().error).toContain('not available');
     worker.socket.close();
   });
 
@@ -227,7 +254,7 @@ describe('server MVP', () => {
       payload: { confirmed: true, stoppedBy: 'integration-test' } });
     expect(await takeWorkerMessage(worker, 'cancel')).toMatchObject({ taskId: task.id });
     expect((await taskFrom(app, task.id)).state).toBe('stopping');
-    worker.socket.send(JSON.stringify({ version: 1, type: 'stopped', taskId: task.id }));
+    worker.socket.send(JSON.stringify({ version: 2, type: 'stopped', taskId: task.id }));
     expect((await stoppedResponse).json()).toMatchObject({ state: 'stopped', stoppedBy: 'integration-test' });
     worker.socket.close();
   });
@@ -260,6 +287,21 @@ describe('server MVP', () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toContain('Open that repository in VS Code');
     expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/tasks` })).json()).toEqual([]);
+  });
+
+  it('rejects task creation when a connected worker exposes no models', async () => {
+    const sandbox = await makeSandbox();
+    const config = configuration(sandbox.dataDir);
+    config.agentBackend = 'worker';
+    const app = await trackedApp(config);
+    const repository = await register(app, sandbox.repository);
+    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    const worker = await connectWorker(address, sandbox.repository, []);
+    const response = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
+      payload: { prompt: 'cannot run' } });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('No Copilot model');
+    worker.socket.close();
   });
 
   it('blocks traversal and symlink escapes while serving managed and checkout previews', async () => {
@@ -430,14 +472,16 @@ function processExists(pid: number): boolean {
 
 interface WorkerClient { socket: WebSocket; messages: Record<string, unknown>[] }
 
-async function connectWorker(address: string, workspaceRoot: string): Promise<WorkerClient> {
+async function connectWorker(address: string, workspaceRoot: string, models = [
+  { id: 'auto', name: 'Auto', vendor: 'copilot', family: 'auto', version: '1', maxInputTokens: 1000 },
+  { id: 'test-model', name: 'Test Model', vendor: 'copilot', family: 'test', version: '1', maxInputTokens: 1000 },
+]): Promise<WorkerClient> {
   const socket = new WebSocket(`${address.replace('http', 'ws')}/ws/workers`);
   const messages: Record<string, unknown>[] = [];
   socket.on('message', (message) => messages.push(JSON.parse(message.toString()) as Record<string, unknown>));
   await onceOpen(socket);
-  socket.send(JSON.stringify({ version: 1, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
-    workspaceRoots: [workspaceRoot], models: [{ id: 'test-model', name: 'Test Model', vendor: 'copilot',
-      family: 'test', version: '1', maxInputTokens: 1000 }] }));
+  socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
+    workspaceRoots: [workspaceRoot], models }));
   const worker = { socket, messages };
   await takeWorkerMessage(worker, 'ready');
   return worker;

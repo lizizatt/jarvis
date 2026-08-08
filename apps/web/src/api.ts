@@ -1,4 +1,4 @@
-import type { PullRequest, Repository, RepositoryStatus, TaskEvent, TaskSummary, TerminalSession } from './types';
+import type { ModelMetadata, PullRequest, Repository, RepositoryStatus, TaskEvent, TaskSummary, TerminalSession } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -35,6 +35,7 @@ type WireRepositoryStatus = {
 function task(value: WireTask): TaskSummary {
   return { ...value, status: value.status ?? value.state ?? 'ready', title: value.title ?? value.initialPrompt,
     nativeSessionId: value.nativeSessionId ?? (value as WireTask & { sessionId?: string }).sessionId,
+    modelId: value.modelId ?? 'auto',
     finishedAt: value.finishedAt ?? value.endedAt ?? undefined };
 }
 
@@ -75,8 +76,9 @@ export const api = {
     return { branch: value.branch ?? 'detached', dirty: value.dirty ?? false, ahead: value.ahead ?? 0, behind: value.behind ?? 0 } as RepositoryStatus;
   },
   tasks: async (repositoryId: string) => collection(await request<WireTask[] | { tasks: WireTask[] }>(`/api/repositories/${repositoryId}/tasks`)).map(task),
+  models: (repositoryId: string) => request<ModelMetadata[]>(`/api/repositories/${repositoryId}/models`),
   task: async (id: string) => task(unwrap(await request<WireTask | { task: WireTask }>(`/api/tasks/${id}`), 'task')),
-  startTask: async (repositoryId: string, message: string) => task(unwrap(await request<WireTask | { task: WireTask }>(`/api/repositories/${repositoryId}/tasks`, { method: 'POST', body: JSON.stringify({ repositoryId, prompt: message }) }), 'task')),
+  startTask: async (repositoryId: string, message: string, modelId: string) => task(unwrap(await request<WireTask | { task: WireTask }>(`/api/repositories/${repositoryId}/tasks`, { method: 'POST', body: JSON.stringify({ repositoryId, prompt: message, modelId }) }), 'task')),
   events: async (taskId: string, after = 0) => collection(await request<TaskEvent[] | { events: TaskEvent[] }>(`/api/tasks/${taskId}/events?after=${after}`)),
   message: async (taskId: string, message: string, kind: 'follow_up' | 'answer' | 'approval' = 'follow_up', questionId?: string) =>
     task(await request<WireTask>(`/api/tasks/${taskId}/messages`, { method: 'POST', body: JSON.stringify({ prompt: message, kind, questionId }) })),
