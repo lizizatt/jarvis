@@ -29,7 +29,8 @@ export async function repositoryStatus(repositoryPath: string): Promise<unknown>
     upstream,
     ahead: Number(aheadBehind?.[1] ?? 0),
     behind: Number(aheadBehind?.[2] ?? 0),
-    dirty: lines.some((line) => /^[12u?]/.test(line)),
+    // Untracked ('?') and ignored ('!') files don't count as dirty; only tracked changes and conflicts do.
+    dirty: lines.some((line) => /^[12u]/.test(line)),
     entries: lines.filter((line) => /^[12u?!]/.test(line)),
     recentCommits: recent ? recent.split('\n').map((line) => {
       const [hash, shortHash, subject, authoredAt] = line.split('\t');

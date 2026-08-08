@@ -59,14 +59,14 @@ describe('server MVP', () => {
     expect(typeof pr.available).toBe('boolean');
   });
 
-  it('lists untracked files as dirty even though they never appear in a diff', async () => {
+  it('does not mark a repository dirty for untracked-only files, but still lists them', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));
     const repository = await register(app, sandbox.repository);
     await writeFile(join(sandbox.repository, 'untracked.txt'), 'new file\n');
 
     const status = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/status` })).json();
-    expect(status.dirty).toBe(true);
+    expect(status.dirty).toBe(false);
     expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/diff` })).body.trim()).toBe('');
     expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/diff?staged=true` })).body.trim()).toBe('');
 
@@ -106,6 +106,7 @@ describe('server MVP', () => {
     await mkdir(unborn);
     await git(unborn, ['init', '--initial-branch=main']);
     await writeFile(join(unborn, 'new.txt'), 'new\n');
+    await git(unborn, ['add', 'new.txt']);
     const app = await trackedApp(configuration(join(sandbox.root, 'unborn-data')));
     const repository = await register(app, unborn);
     const status = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/status` })).json();
