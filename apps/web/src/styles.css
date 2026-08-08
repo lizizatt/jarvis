@@ -20,6 +20,8 @@
   --green: #48cf80;
   --green-wash: rgb(72 207 128 / 9%);
   --shadow: 0 20px 60px rgb(0 0 0 / 38%);
+  /* border(1) + padding(9+9) + textarea min-height(52) from .task-composer, so autoscroll clears the fixed bar. */
+  --composer-height: calc(71px + env(safe-area-inset-bottom));
 }
 
 * { box-sizing: border-box; }
@@ -159,6 +161,7 @@ input::placeholder, textarea::placeholder { color: #747c79; }
 .question-answer input { min-width: 0; flex: 1; }
 .question-answered { display: inline-block; margin-top: 8px; color: var(--muted); font-size: .72rem; font-family: 'IBM Plex Mono', monospace; }
 .task-composer { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 9px 12px calc(9px + env(safe-area-inset-bottom)); background: rgb(7 9 9 / 96%); border-top: 1px solid var(--line); backdrop-filter: blur(12px); }
+.scroll-anchor { scroll-margin-bottom: var(--composer-height); }
 .task-composer form { position: relative; }
 .task-composer textarea { min-height: 52px; padding-right: 48px; resize: none; }
 .task-composer .send { position: absolute; right: 4px; bottom: 4px; color: var(--gold); background: #111515; border: 1px solid rgb(239 189 73 / 48%); }

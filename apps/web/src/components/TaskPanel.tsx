@@ -12,7 +12,7 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
   const events = useTaskStream(task.id);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setTask(initialTask); }, [initialTask]);
-  useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }, [events.length]);
+  useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' }); }, [events.length]);
   useEffect(() => {
     const lifecycle = [...events].reverse().find((event) => event.type === 'task_state') as (typeof events[number] & { state?: TaskSummary['status'] }) | undefined;
     if (lifecycle?.state && lifecycle.state !== task.status) { const updated = { ...task, status: lifecycle.state }; setTask(updated); onTaskChange(updated); }
@@ -52,7 +52,7 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
   return <section className="task-panel" data-testid={`task-${task.id}`}>
     <div className="task-meta"><TaskStatusBadge status={task.status} /><span className="session-id">Model {modelLabel}</span>{task.nativeSessionId && <span className="session-id">Session {task.nativeSessionId}</span>}</div>
     <Timeline events={events} onAnswer={send} />
-    <div ref={endRef} />
+    <div ref={endRef} className="scroll-anchor" />
     <div className="task-composer">
       <form onSubmit={submit}><label className="sr-only" htmlFor="follow-up">Follow-up message</label><textarea id="follow-up" name="message" rows={2} placeholder={task.status === 'stopping' ? 'Task is stopping…' : 'Send a follow-up…'} disabled={sending || task.status === 'stopping'} /><button className="icon-button send" type="submit" aria-label="Send message" disabled={sending || task.status === 'stopping'}><Send /></button></form>
       {active && <button className="button stop" onClick={stop} disabled={task.status === 'stopping'} data-testid="stop-task"><Square size={15} />{task.status === 'stopping' ? 'Stopping…' : 'Stop agent'}</button>}
