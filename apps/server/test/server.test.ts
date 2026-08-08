@@ -229,6 +229,22 @@ describe('server MVP', () => {
       .some((event: { kind: string }) => event.kind === 'question')).toBe(false);
   });
 
+  it('deletes a finished task but rejects deleting an active one', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    const finished = (await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
+      payload: { prompt: 'mention question casually' } })).json() as Task;
+    await waitFor(async () => (await taskFrom(app, finished.id)).state === 'completed');
+    const active = (await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`, payload: { prompt: 'HANG' } })).json() as Task;
+    expect((await app.inject({ method: 'DELETE', url: `/api/tasks/${active.id}` })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'DELETE', url: `/api/tasks/${finished.id}` })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: `/api/tasks/${finished.id}` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `/api/tasks/${finished.id}` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: '/api/tasks/does-not-exist' })).statusCode).toBe(404);
+    await app.inject({ method: 'POST', url: `/api/tasks/${active.id}/stop`, payload: { confirmed: true } });
+  });
+
   it('rejects a second active conversation and idempotently kills the complete process group', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));

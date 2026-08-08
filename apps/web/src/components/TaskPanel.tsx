@@ -54,7 +54,8 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
     ? resolvedModel.family ?? resolvedModel.name ?? task.modelId
     : resolvedModel?.name ?? resolvedModel?.family ?? task.modelId;
   return <section className="task-panel" data-testid={`task-${task.id}`}>
-    <div ref={topRef} className="scroll-controls"><button className="icon-button" aria-label="Scroll to top" onClick={scrollToTop} data-testid="scroll-top"><ChevronsUp /></button><button className="icon-button" aria-label="Scroll to bottom" onClick={scrollToBottom} data-testid="scroll-bottom"><ChevronsDown /></button></div>
+    <div ref={topRef} className="scroll-top-anchor" aria-hidden="true" />
+    <div className="scroll-controls"><button className="icon-button" aria-label="Scroll to top" onClick={scrollToTop} data-testid="scroll-top"><ChevronsUp /></button><button className="icon-button" aria-label="Scroll to bottom" onClick={scrollToBottom} data-testid="scroll-bottom"><ChevronsDown /></button></div>
     <div className="task-meta"><TaskStatusBadge status={task.status} /><span className="session-id">Model {modelLabel}</span>{task.nativeSessionId && <span className="session-id">Session {task.nativeSessionId}</span>}</div>
     <Timeline events={events} onAnswer={send} />
     <div ref={endRef} className="scroll-anchor" />
