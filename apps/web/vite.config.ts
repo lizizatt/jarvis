@@ -17,8 +17,8 @@ export default defineConfig({
         name: 'Jarvis Developer Control',
         short_name: 'Jarvis',
         description: 'Private mobile control for local developer agents',
-        theme_color: '#173d34',
-        background_color: '#f3f6f1',
+        theme_color: '#070909',
+        background_color: '#070909',
         display: 'standalone',
         start_url: '/',
         icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }]

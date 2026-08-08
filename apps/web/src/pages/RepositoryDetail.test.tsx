@@ -33,6 +33,7 @@ test('renders structured ordered activity with raw output and optimistic stop', 
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
   expect(await screen.findByRole('heading', { name: 'Planner' })).toBeVisible();
+  expect(screen.getByTestId('repository-detail').querySelector('.ambient-sigil')).toHaveAttribute('aria-hidden', 'true');
   const timeline = await screen.findByTestId('task-timeline');
   expect(within(timeline).getByText('Inspecting planner')).toBeVisible();
   expect(within(timeline).getByText('Activity output')).toBeVisible();

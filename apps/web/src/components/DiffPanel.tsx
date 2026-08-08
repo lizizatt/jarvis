@@ -3,6 +3,18 @@ import { ExternalLink, GitPullRequest, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 import { useLoad } from '../hooks';
 
+function diffLineClass(line: string): string {
+  if (line.startsWith('+') && !line.startsWith('+++')) return 'diff-line diff-addition';
+  if (line.startsWith('-') && !line.startsWith('---')) return 'diff-line diff-deletion';
+  if (line.startsWith('@@')) return 'diff-line diff-hunk';
+  if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) return 'diff-line diff-header';
+  return 'diff-line';
+}
+
+function DiffText({ text }: { text: string }) {
+  return <>{text.split('\n').map((line, index) => <span className={diffLineClass(line)} key={index}>{line || ' '}</span>)}</>;
+}
+
 export function DiffPanel({ repositoryId }: { repositoryId: string }) {
   const [mode, setMode] = useState<'worktree' | 'staged'>('worktree');
   const diff = useLoad(() => api.diff(repositoryId, mode), [repositoryId, mode]);
@@ -12,6 +24,6 @@ export function DiffPanel({ repositoryId }: { repositoryId: string }) {
     {pullRequest.data?.checks?.length ? <div className="checks">{pullRequest.data.checks.map((check) => <span key={check.name} className={`check check-${check.state}`}>{check.name}</span>)}</div> : null}
     <div className="section-toolbar"><div className="segmented" aria-label="Diff mode"><button className={mode === 'worktree' ? 'active' : ''} onClick={() => setMode('worktree')}>Worktree</button><button className={mode === 'staged' ? 'active' : ''} onClick={() => setMode('staged')}>Staged</button></div><button className="icon-button" aria-label="Refresh diff" onClick={() => void diff.reload()}><RefreshCw size={18} /></button></div>
     {diff.error && <div className="notice error">{diff.error}</div>}
-    <pre className="diff" data-testid="repository-diff">{diff.loading ? 'Loading diff…' : diff.data || 'No changes in this view.'}</pre>
+    <pre className="diff" data-testid="repository-diff"><DiffText text={diff.loading ? 'Loading diff…' : diff.data || 'No changes in this view.'} /></pre>
   </div>;
 }

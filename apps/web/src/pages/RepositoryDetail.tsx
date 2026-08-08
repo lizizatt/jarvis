@@ -6,6 +6,7 @@ import { useLoad } from '../hooks';
 import { TaskPanel } from '../components/TaskPanel';
 import { DiffPanel } from '../components/DiffPanel';
 import { TaskStatusBadge } from '../components/Status';
+import { AmbientSigil } from '../components/Sigil';
 import type { TaskSummary } from '../types';
 
 type Tab = 'agent' | 'changes' | 'terminal' | 'preview';
@@ -49,6 +50,7 @@ export function RepositoryDetail() {
   if (repository.error || !repository.data) return <main className="page"><Link to="/" className="back-link"><ArrowLeft />Repositories</Link><div className="notice error">{repository.error || 'Repository not found'}</div></main>;
   const repo = repository.data;
   return <main className="detail-page" data-testid="repository-detail">
+    <AmbientSigil />
     <header className="detail-header"><Link to="/" className="icon-button" aria-label="Back to repositories"><ArrowLeft /></Link><div><h1>{repo.name}</h1><p>{repo.status?.branch ?? repo.defaultBranch}</p></div><button className="icon-button" aria-label="New task" onClick={() => { setTab('agent'); setSelectedTask(undefined); }} data-testid="header-new-task"><Plus /></button>{repo.previewUrl && <a className="icon-button" aria-label="Open preview in new tab" href={repo.previewUrl} target="_blank" rel="noreferrer"><ExternalLink /></a>}</header>
     <nav className="tabs" aria-label="Repository views">{([['agent', MessageSquare, 'Agent'], ['changes', GitCompare, 'Changes'], ['terminal', TerminalSquare, 'Terminal'], ['preview', Monitor, 'Preview']] as const).map(([value, Icon, label]) => <button key={value} className={tab === value ? 'active' : ''} onClick={() => setTab(value)} data-testid={`tab-${value}`}><Icon size={18} />{label}</button>)}</nav>
     <div className="detail-content">

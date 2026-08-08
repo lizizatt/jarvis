@@ -4,11 +4,11 @@ export function useLoad<T>(loader: () => Promise<T>, dependencies: readonly unkn
   const [data, setData] = useState<T>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try { setData(await loader()); setError(''); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Request failed'); }
-    finally { setLoading(false); }
+    finally { if (showLoading) setLoading(false); }
   }, dependencies);
   useEffect(() => { void reload(); }, [reload]);
   return { data, setData, error, loading, reload };
