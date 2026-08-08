@@ -59,6 +59,47 @@ describe('server MVP', () => {
     expect(typeof pr.available).toBe('boolean');
   });
 
+  it('lists untracked files as dirty even though they never appear in a diff', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    await writeFile(join(sandbox.repository, 'untracked.txt'), 'new file\n');
+
+    const status = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/status` })).json();
+    expect(status.dirty).toBe(true);
+    expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/diff` })).body.trim()).toBe('');
+    expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/diff?staged=true` })).body.trim()).toBe('');
+
+    const files = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/status-files` })).json();
+    expect(files).toEqual([{ status: '??', path: 'untracked.txt' }]);
+  });
+
+  it('reports a name-only status listing for a renamed file', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    await writeFile(join(sandbox.repository, 'unstaged.txt'), 'a\n');
+    await git(sandbox.repository, ['add', 'unstaged.txt']);
+    await git(sandbox.repository, ['commit', '-m', 'add unstaged']);
+    await git(sandbox.repository, ['mv', 'unstaged.txt', 'renamed.txt']);
+
+    const files = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/status-files` })).json();
+    expect(files).toEqual([{ status: 'R ', path: 'unstaged.txt -> renamed.txt' }]);
+  });
+
+  it('returns an empty status-files listing for a clean checkout', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/status-files` })).json()).toEqual([]);
+  });
+
+  it('reports 404 for status-files on an unknown repository', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    expect((await app.inject({ method: 'GET', url: '/api/repositories/does-not-exist/status-files' })).statusCode).toBe(404);
+  });
+
   it('reports status for a repository before its first commit', async () => {
     const sandbox = await makeSandbox();
     const unborn = join(sandbox.root, 'unborn');

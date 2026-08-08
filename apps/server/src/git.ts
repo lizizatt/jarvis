@@ -42,6 +42,14 @@ export async function repositoryDiff(repositoryPath: string, staged: boolean): P
   return git(repositoryPath, staged ? ['diff', '--cached', '--no-ext-diff'] : ['diff', '--no-ext-diff']);
 }
 
+export interface RepositoryStatusFile { status: string; path: string }
+
+// git diff/--cached omit untracked files, so this covers what repositoryStatus's dirty flag actually reports.
+export async function repositoryStatusFiles(repositoryPath: string): Promise<RepositoryStatusFile[]> {
+  const output = await git(repositoryPath, ['status', '--porcelain=v1']);
+  return output.split('\n').filter(Boolean).map((line) => ({ status: line.slice(0, 2), path: line.slice(3) }));
+}
+
 export async function pullRequest(repositoryPath: string): Promise<unknown> {
   try {
     const output = await execFileAsync('gh', ['pr', 'view',

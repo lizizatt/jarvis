@@ -56,20 +56,24 @@ pre { font-family: 'IBM Plex Mono', monospace; }
 .button:disabled, .icon-button:disabled { cursor: not-allowed; opacity: .55; }
 .button { padding: 0 16px; }
 .button.primary { color: var(--gold); background: var(--surface-raised); border: 1px solid rgb(239 189 73 / 62%); box-shadow: inset 0 0 18px var(--gold-wash); }
-.button.primary:hover { background: rgb(239 189 73 / 12%); border-color: var(--gold); }
 .button.secondary { color: var(--ink); background: var(--surface-raised); border: 1px solid var(--line); }
-.button.secondary:hover { color: var(--gold); border-color: rgb(239 189 73 / 52%); background: var(--gold-wash); }
 .button.stop { color: #f05a60; background: var(--surface-raised); border: 1px solid rgb(213 47 54 / 66%); box-shadow: inset 0 0 18px var(--red-wash); }
-.button.stop:hover { color: #ff7176; border-color: var(--red); background: rgb(213 47 54 / 13%); }
 .button.compact { min-height: 44px; padding: 0 11px; font-size: .78rem; }
 .icon-button { width: 44px; padding: 0; color: var(--ink); background: rgb(17 21 21 / 88%); border: 1px solid var(--line); }
-.icon-button:hover { color: var(--gold); border-color: rgb(239 189 73 / 58%); background: var(--gold-wash); }
 .button:focus-visible, .icon-button:focus-visible, a:focus-visible, .tabs button:focus-visible, .task-history button:focus-visible, .segmented button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .icon-button svg { width: 19px; }
 
+/* Touch devices keep a tapped element in :hover indefinitely, which read as banners randomly swapping red/gold; real pointers still get hover feedback. */
+@media (hover: hover) and (pointer: fine) {
+  .button.primary:hover { background: rgb(239 189 73 / 12%); border-color: var(--gold); }
+  .button.secondary:hover { color: var(--gold); border-color: rgb(239 189 73 / 52%); background: var(--gold-wash); }
+  .button.stop:hover { color: #ff7176; border-color: var(--red); background: rgb(213 47 54 / 13%); }
+  .icon-button:hover { color: var(--gold); border-color: rgb(239 189 73 / 58%); background: var(--gold-wash); }
+  .repo-row:hover { border-color: #474d4c; border-left-color: var(--gold); }
+}
+
 .repo-list { display: grid; gap: 10px; }
 .repo-row { position: relative; display: grid; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--red); box-shadow: 0 12px 30px rgb(0 0 0 / 18%); backdrop-filter: blur(8px); }
-.repo-row:hover { border-color: #474d4c; border-left-color: var(--gold); }
 .repo-main { display: block; min-width: 0; padding: 17px 16px 14px; }
 .repo-title { display: flex; align-items: center; gap: 9px; }
 .repo-title h2 { overflow: hidden; margin: 0; color: var(--ink); font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -176,10 +180,21 @@ input::placeholder, textarea::placeholder { color: #747c79; }
 .check-failure { color: #f05a60; background: var(--red-wash); border-color: rgb(213 47 54 / 28%); }
 .section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 13px 0 9px; }
 .section-toolbar select { width: auto; max-width: 60%; }
-.segmented { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; background: #0d1010; border: 1px solid var(--line); border-radius: 4px; }
+.segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 3px; background: #0d1010; border: 1px solid var(--line); border-radius: 4px; }
 .segmented button { min-height: 44px; padding: 0 13px; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 2px; font-size: .72rem; font-weight: 700; }
 .segmented button.active { color: var(--gold); background: var(--gold-wash); border-bottom-color: var(--gold); box-shadow: none; }
 .diff { min-height: 55vh; max-width: 100%; overflow: auto; margin: 0; padding: 13px; color: #d9dddb; background: #050707; border: 1px solid #282d2c; border-left: 3px solid var(--gold); font-size: .68rem; line-height: 1.55; tab-size: 2; }
+.status-files { min-height: 55vh; overflow: auto; margin: 0; padding: 0; list-style: none; border: 1px solid #282d2c; }
+.status-files li { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border-bottom: 1px solid #282d2c; }
+.status-files li:last-child { border-bottom: 0; }
+.status-files-empty { color: var(--muted); font-size: .78rem; }
+.file-status { flex: 0 0 auto; padding: 2px 7px; border-radius: 3px; font-size: .62rem; font-weight: 700; text-transform: uppercase; }
+.file-status-modified { color: var(--gold); background: var(--gold-wash); border: 1px solid rgb(239 189 73 / 32%); }
+.file-status-added { color: var(--green); background: var(--green-wash); border: 1px solid rgb(72 207 128 / 28%); }
+.file-status-deleted, .file-status-conflict { color: #f05a60; background: var(--red-wash); border: 1px solid rgb(213 47 54 / 28%); }
+.file-status-renamed { color: var(--gold); background: var(--gold-wash); border: 1px solid rgb(239 189 73 / 32%); }
+.file-status-untracked { color: var(--muted); background: transparent; border: 1px solid var(--line); }
+.file-path { min-width: 0; overflow: hidden; color: #d9dddb; font-family: 'IBM Plex Mono', monospace; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .diff-line { display: block; min-height: 1.55em; margin: 0 -13px; padding: 0 13px; }
 .diff-addition { color: #86d9a7; background: rgb(72 207 128 / 8%); }
 .diff-deletion { color: #f18489; background: rgb(213 47 54 / 9%); }
