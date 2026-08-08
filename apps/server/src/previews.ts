@@ -1,3 +1,4 @@
+import { marked } from 'marked';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 
@@ -8,7 +9,7 @@ const TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
-// Some mobile browsers won't render text/plain inline inside an iframe, so markdown is wrapped as real HTML instead.
+// Rendered to real HTML (not served as text/plain) since some mobile browsers won't frame plain text inline.
 const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown']);
 
 export async function ensureLanding(previewsRoot: string, repositoryId: string, repositoryName: string): Promise<string> {
@@ -40,8 +41,25 @@ export async function readPreviewFile(root: string, requestedPath: string): Prom
 }
 
 function renderMarkdownPreview(source: string): Buffer {
-  return Buffer.from(`<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:16px;background:#fff;color:#1b1f1e;font:14px/1.6 -apple-system,system-ui,sans-serif}pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:inherit}</style><pre>${escapeHtml(source)}</pre>`);
+  const html = marked.parse(source, { async: false }) as string;
+  return Buffer.from(`<!doctype html><meta charset="utf-8"><style>${MARKDOWN_STYLE}</style>${html}`);
 }
+
+const MARKDOWN_STYLE = `
+  body{margin:0;padding:20px;max-width:860px;background:#fff;color:#1b1f1e;font:15px/1.6 -apple-system,system-ui,sans-serif}
+  h1,h2,h3,h4,h5,h6{margin:1.2em 0 .5em;line-height:1.25}
+  h1{font-size:1.7em;border-bottom:1px solid #e2e2e2;padding-bottom:.3em}
+  h2{font-size:1.35em;border-bottom:1px solid #eee;padding-bottom:.25em}
+  p,ul,ol,table,blockquote,pre{margin:0 0 1em}
+  code{padding:.15em .35em;background:#f2f2f2;border-radius:3px;font-size:.9em}
+  pre{padding:12px;overflow:auto;background:#f6f8fa;border-radius:4px}
+  pre code{padding:0;background:none}
+  blockquote{margin:0 0 1em;padding-left:12px;border-left:3px solid #d8d8d8;color:#57606a}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #d8d8d8;padding:6px 10px;text-align:left}
+  img{max-width:100%}
+  a{color:#0969da}
+`;
 
 export class PreviewError extends Error { constructor(message: string, readonly statusCode: number) { super(message); } }
 export function rewritePreviewHtml(body: Buffer, repositoryId: string): Buffer {
