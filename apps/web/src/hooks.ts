@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export function useLoad<T>(loader: () => Promise<T>, dependencies: readonly unknown[]) {
+export function useLoad<T>(loader: () => Promise<T>, dependencies: readonly unknown[], isEqual?: (current: T, next: T) => boolean) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const reload = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
-    try { setData(await loader()); setError(''); }
+    try {
+      const next = await loader();
+      setData((current) => current !== undefined && isEqual?.(current, next) ? current : next);
+      setError('');
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Request failed'); }
     finally { if (showLoading) setLoading(false); }
   }, dependencies);

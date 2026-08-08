@@ -6,9 +6,16 @@ import { elapsed, useLoad } from '../hooks';
 import { TaskStatusBadge } from '../components/Status';
 import { PwaControls } from '../components/PwaControls';
 import { AmbientSigil, JarvisMark } from '../components/Sigil';
+import type { Repository } from '../types';
+
+function repositoriesEqual(current: Repository[], next: Repository[]) {
+  return !current.some((repository) => repository.activeTask)
+    && !next.some((repository) => repository.activeTask)
+    && JSON.stringify(current) === JSON.stringify(next);
+}
 
 export function Dashboard() {
-  const { data: repositories = [], setData, error, loading, reload } = useLoad(api.repositories, []);
+  const { data: repositories = [], setData, error, loading, reload } = useLoad(api.repositories, [], repositoriesEqual);
 
   useEffect(() => {
     const refresh = window.setInterval(() => void reload(false), 2_000);

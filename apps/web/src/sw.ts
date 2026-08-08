@@ -1,10 +1,23 @@
 /// <reference lib="webworker" />
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import { clientsClaim } from 'workbox-core';
 
 declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<{ revision: string | null; url: string }> };
 
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
+self.skipWaiting();
+clientsClaim();
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    await Promise.all(windows.map(async (client) => {
+      const url = new URL(client.url);
+      if (url.origin === self.location.origin && url.pathname === '/') await (client as WindowClient).navigate(client.url);
+    }));
+  })());
+});
 
 self.addEventListener('push', (event) => {
   const payload = event.data?.json() as { title?: string; body?: string; url?: string; repositoryId?: string; taskId?: string } | undefined;

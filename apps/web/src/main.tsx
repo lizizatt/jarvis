@@ -4,5 +4,10 @@ import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import './styles.css';
 
-registerSW({ immediate: true });
+registerSW({
+	immediate: true,
+	onRegisteredSW: (_url, registration) => {
+		if (registration) window.setInterval(() => void registration.update(), 60_000);
+	},
+});
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
