@@ -8,6 +8,7 @@ import type { PushSubscription } from 'web-push';
 import { Store } from './database.js';
 import { EventHub } from './events.js';
 import { pullRequest, previewCandidates, repositoryDiff, repositoryStatus, repositoryStatusFiles, validateGitRoot } from './git.js';
+import { HostMetricsSampler } from './metrics.js';
 import { ensureLanding, readPreviewFile, rewritePreviewHtml } from './previews.js';
 import { PushService } from './push.js';
 import { TaskManager } from './tasks.js';
@@ -26,10 +27,12 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   const workers = new WorkerManager();
   const tasks = new TaskManager(store, hub, push, config, workers);
   const terminals = new TerminalManager(join(config.dataDir, 'terminal-host.sock'), config.terminalHostScript!, config.terminalHostExternal);
+  const metrics = new HostMetricsSampler();
   await app.register(websocket);
 
-  app.addHook('onClose', async () => { await tasks.shutdown(); workers.close(); hub.removeAllListeners(); store.close(); });
+  app.addHook('onClose', async () => { await tasks.shutdown(); workers.close(); hub.removeAllListeners(); store.close(); metrics.close(); });
   app.get('/api/health', async () => ({ ok: true, interruptedOnStartup: interrupted }));
+  app.get('/api/metrics', async () => metrics.current());
   app.get('/api/config', async () => ({ agentExecutable: config.agentExecutable, policy: config.policy,
     vapidPublicKey: push.publicKey, terminalPersistence: 'node-pty-detached-host' }));
   app.get('/api/workers', async () => workers.list());

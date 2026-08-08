@@ -60,6 +60,20 @@ export interface PullRequest {
   checks?: Array<{ name: string; state: string }>;
 }
 
+export interface HostMetricsSample {
+  timestamp: string;
+  cpuPercent: number;
+  perCorePercent: number[];
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  loadAverage: [number, number, number];
+}
+
+export interface HostMetrics extends HostMetricsSample {
+  cpuCount: number;
+  history: HostMetricsSample[];
+}
+
 export interface DiffResult { mode: 'worktree' | 'staged'; diff: string }
 export interface RepositoryStatusFile { status: string; path: string }
 export interface PreviewFile { path: string; kind: 'readme' | 'html' }

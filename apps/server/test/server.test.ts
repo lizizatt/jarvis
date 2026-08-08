@@ -40,6 +40,16 @@ describe('server MVP', () => {
     expect((await app.inject({ method: 'GET', url: '/api/tasks/task' })).json().state).toBe('interrupted');
   });
 
+  it('reports current host metrics with per-core load and bounded history', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const metrics = (await app.inject({ method: 'GET', url: '/api/metrics' })).json();
+    expect(metrics.cpuCount).toBeGreaterThan(0);
+    expect(metrics.perCorePercent.length).toBe(metrics.cpuCount);
+    expect(metrics.memoryTotalBytes).toBeGreaterThan(0);
+    expect(metrics.history.length).toBeGreaterThan(0);
+  });
+
   it('registers only real checkout roots and reports status and both diffs', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));

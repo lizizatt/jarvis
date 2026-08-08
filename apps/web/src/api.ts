@@ -1,4 +1,4 @@
-import type { ModelMetadata, PreviewFile, PullRequest, Repository, RepositoryStatus, RepositoryStatusFile, TaskEvent, TaskSummary, TerminalSession } from './types';
+import type { HostMetrics, ModelMetadata, PreviewFile, PullRequest, Repository, RepositoryStatus, RepositoryStatusFile, TaskEvent, TaskSummary, TerminalSession } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body !== undefined && init.body !== null;
@@ -97,6 +97,7 @@ export const api = {
     return Array.isArray(value) ? value : value.sessions ?? value.items ?? [];
   },
   createTerminal: async (id: string, name = 'shell') => unwrap(await request<TerminalSession | { session: TerminalSession }>(`/api/repositories/${id}/terminals`, { method: 'POST', body: JSON.stringify({ name }) }), 'session'),
+  metrics: () => request<HostMetrics>('/api/metrics'),
   vapidKey: async () => ({ publicKey: (await request<{ vapidPublicKey: string }>('/api/config')).vapidPublicKey }),
   subscribePush: (subscription: PushSubscriptionJSON) => request<void>('/api/push/subscriptions', { method: 'POST', body: JSON.stringify(subscription) }),
   unsubscribePush: (endpoint: string) => request<void>('/api/push/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint }) })
