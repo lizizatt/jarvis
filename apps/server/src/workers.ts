@@ -202,6 +202,9 @@ function parseMessage(raw: string): WorkerMessage {
   if (!isString(message.taskId) || !['event', 'complete', 'failed', 'stopped'].includes(String(message.type))) {
     throw new Error('Invalid worker message');
   }
+  if (message.type === 'event' && !isString(message.kind)) {
+    throw new Error('Invalid worker message');
+  }
   return message as WorkerEventMessage | WorkerTerminalMessage;
 }
 
