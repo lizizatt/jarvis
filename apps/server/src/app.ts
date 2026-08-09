@@ -119,6 +119,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   });
   app.post<{ Params: IdParams; Body: { confirmed?: boolean; stoppedBy?: string } }>('/api/tasks/:id/stop', async (request, reply) => {
     if (request.body?.confirmed !== true) return reply.code(400).send({ error: 'confirmed must be true' });
+    if (!store.getTask(request.params.id)) return reply.code(404).send({ error: 'Task not found' });
     try { return taskSummary(store, await tasks.stop(request.params.id, request.body.stoppedBy?.trim() || 'user')); }
     catch (error) { return sendKnownError(reply, error); }
   });

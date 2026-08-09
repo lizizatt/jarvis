@@ -84,8 +84,8 @@ export class TaskManager {
     if (!ACTIVE_TASK_STATES.includes(task.state)) return task;
     const turn = this.running.get(taskId);
     if (!turn) {
-      this.store.setTaskState(taskId, 'interrupted');
-      this.emit(taskId, 'lifecycle', { state: 'interrupted' });
+      this.store.setTaskState(taskId, 'interrupted', { stoppedBy });
+      this.emit(taskId, 'lifecycle', { state: 'interrupted', stoppedBy });
       return this.store.getTask(taskId)!;
     }
     turn.stopRequested = true;
