@@ -60,6 +60,7 @@ export function useTaskStream(taskId?: string) {
         if (!active) return;
         try {
           const event = JSON.parse(String(message.data)) as TaskEvent & { taskId?: string };
+          if (typeof event.sequence !== 'number') { void replay(lastSequence.current); return; }
           if (event.sequence > lastSequence.current + 1) { void replay(lastSequence.current); return; }
           lastSequence.current = Math.max(lastSequence.current, event.sequence);
           setEvents((current) => mergeOrdered(current, [event]));

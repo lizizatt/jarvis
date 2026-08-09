@@ -56,7 +56,8 @@ export class TaskManager {
       turn.replacement = { repository, prompt };
       this.emit(task.id, 'user_message', { text: prompt, followUp: true, ...metadata });
       this.emit(task.id, 'lifecycle', { state: 'starting', reason: 'follow_up' });
-      this.cancel(turn);
+      try { this.cancel(turn); }
+      catch (error) { turn.replacement = undefined; throw error; }
       await turn.close;
       return this.store.getTask(task.id)!;
     }
