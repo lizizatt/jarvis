@@ -48,11 +48,11 @@ export class TaskManager {
   async followUp(task: Task, repository: Repository, prompt: string,
     metadata: { kind?: string; questionId?: string } = {}): Promise<Task> {
     const conflicting = this.store.listTasks(repository.id).find((candidate) => candidate.id !== task.id && ACTIVE_TASK_STATES.includes(candidate.state));
-    if (conflicting) throw new Error('Repository already has an active task');
+    if (conflicting) throw conflict('Repository already has an active task');
     if (ACTIVE_TASK_STATES.includes(task.state)) {
       const turn = this.running.get(task.id);
       if (!turn || turn.stopRequested || turn.shutdownRequested) throw new Error('Task turn cannot accept a follow-up');
-      if (turn.replacement) throw new Error('Task already has a follow-up pending');
+      if (turn.replacement) throw conflict('Task already has a follow-up pending');
       turn.replacement = { repository, prompt };
       this.emit(task.id, 'user_message', { text: prompt, followUp: true, ...metadata });
       this.emit(task.id, 'lifecycle', { state: 'starting', reason: 'follow_up' });
@@ -91,7 +91,14 @@ export class TaskManager {
     turn.stopRequested = true;
     this.store.setTaskState(taskId, 'stopping', { stoppedBy });
     this.emit(taskId, 'lifecycle', { state: 'stopping', stoppedBy });
-    this.cancel(turn);
+    try { this.cancel(turn); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+        this.running.delete(taskId);
+        this.store.setTaskState(taskId, 'interrupted', { stoppedBy });
+        this.emit(taskId, 'lifecycle', { state: 'interrupted', stoppedBy });
+        return this.store.getTask(taskId)!;
+      }
+    }
     await turn.close;
     return this.store.getTask(taskId)!;
   }
@@ -262,6 +269,12 @@ export class TaskManager {
     this.hub.publish(event);
     return event;
   }
+}
+
+function conflict(message: string): Error {
+  const error = new Error(message) as Error & { statusCode: number };
+  error.statusCode = 409;
+  return error;
 }
 
 function requiresUserInput(value: unknown): boolean {
