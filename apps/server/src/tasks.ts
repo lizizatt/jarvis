@@ -125,11 +125,14 @@ export class TaskManager {
     this.emit(task.id, 'lifecycle', { state: 'running', pid: child.pid, executable: this.config.agentExecutable, args });
 
     const parser = new JsonLineParser(this.config.maxJsonLineBytes, (value) => this.handleJson(task.id, value));
+    const stderrDecoder = new StringDecoder('utf8');
     child.stdout?.on('data', (chunk: Buffer) => parser.write(chunk));
-    child.stderr?.on('data', (chunk: Buffer) => this.handleStderr(task.id, chunk));
+    child.stderr?.on('data', (chunk: Buffer) => this.handleStderr(task.id, stderrDecoder.write(chunk)));
     child.on('error', (error) => this.emit(task.id, 'process_error', { message: error.message, code: (error as NodeJS.ErrnoException).code }));
     child.on('close', (code, signal) => {
       parser.end();
+      const trailingStderr = stderrDecoder.end();
+      if (trailingStderr) this.handleStderr(task.id, trailingStderr);
       this.running.delete(task.id);
       if (turn.replacement && !turn.stopRequested && !turn.shutdownRequested) {
         this.store.setTaskState(task.id, 'starting');
@@ -239,17 +242,11 @@ export class TaskManager {
     }
   }
 
-  private handleStderr(taskId: string, chunk: Buffer): void {
-    const decoder = new StringDecoder('utf8');
-    let remaining = chunk;
-    while (remaining.length > 0) {
-      const slice = remaining.subarray(0, this.config.maxStderrChunkBytes);
-      remaining = remaining.subarray(slice.length);
-      const text = decoder.write(slice) + (remaining.length === 0 ? decoder.end() : '');
-      if (text) {
-        this.emit(taskId, 'stderr', { text });
-        this.diagnosePolicy(taskId, text);
-      }
+  private handleStderr(taskId: string, text: string): void {
+    for (let offset = 0; offset < text.length; offset += this.config.maxStderrChunkBytes) {
+      const slice = text.slice(offset, offset + this.config.maxStderrChunkBytes);
+      this.emit(taskId, 'stderr', { text: slice });
+      this.diagnosePolicy(taskId, slice);
     }
   }
 
