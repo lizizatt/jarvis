@@ -6,7 +6,7 @@ import { elapsed, useLoad } from '../hooks';
 import { TaskStatusBadge } from '../components/Status';
 import { PwaControls } from '../components/PwaControls';
 import { SystemWidget } from '../components/SystemWidget';
-import { AmbientSigil, JarvisMark } from '../components/Sigil';
+import { AmbientSigil } from '../components/Sigil';
 import type { Repository } from '../types';
 
 function repositoriesEqual(current: Repository[], next: Repository[]) {
@@ -25,7 +25,7 @@ export function Dashboard() {
 
   return <main className="page dashboard" data-testid="dashboard">
     <AmbientSigil />
-    <header className="page-heading"><h1 className="sr-only">Repositories</h1><JarvisMark /><SystemWidget /><div className="heading-actions"><PwaControls /></div></header>
+    <header className="page-heading"><h1 className="sr-only">Repositories</h1><SystemWidget /><div className="heading-actions"><PwaControls /></div></header>
     {error && <div className="notice error" role="alert">{error}</div>}
     {loading && <div className="empty">Loading repositories…</div>}
     {!loading && repositories.length === 0 && <div className="empty"><GitBranch size={28} /><h2>No checkouts configured</h2><p>Register repositories from the Jarvis server.</p></div>}
