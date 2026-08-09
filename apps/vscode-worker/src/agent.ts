@@ -76,6 +76,7 @@ export async function runAgentTurn(
 		}
 		const results: vscode.LanguageModelToolResultPart[] = [];
 		const outcomes: Array<{ name: string; input: unknown; output: string }> = [];
+		let askedUser = false;
 		for (const call of toolCalls) {
 			let output: string;
 			try {
@@ -90,9 +91,11 @@ export async function runAgentTurn(
 			outcomes.push({ name: call.name, input: call.input, output });
 			results.push(new vscode.LanguageModelToolResultPart(call.callId, [new vscode.LanguageModelTextPart(output)]));
 			if (call.name === 'ask_user') {
-				return finalText;
+				askedUser = true;
+				break;
 			}
 		}
+		if (askedUser) return finalText;
 		messages.push(vscode.LanguageModelChatMessage.User(results));
 		const toolSignature = toolRoundSignature(outcomes);
 		repeatedToolRounds = nextRepeatedToolRound(previousToolSignature, toolSignature, repeatedToolRounds);
@@ -123,7 +126,7 @@ function stableSerialize(value: unknown): string {
 	return JSON.stringify(value);
 }
 
-function boundedHistory(history: TurnMessage['history'], maxInputTokens: number, reservedCharacters: number): TurnMessage['history'] {
+export function boundedHistory(history: TurnMessage['history'], maxInputTokens: number, reservedCharacters: number): TurnMessage['history'] {
 	const budget = Math.max(8_000, maxInputTokens * 3 - reservedCharacters - 12_000);
 	const selected: TurnMessage['history'] = [];
 	let characters = 0;
