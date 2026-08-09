@@ -35,7 +35,12 @@ const server = createServer((socket) => {
   });
   socket.on('close', () => {
     clients.delete(socket);
-    for (const id of attached) sessions.get(id)?.clients.delete(socket);
+    for (const id of attached) {
+      const session = sessions.get(id);
+      if (!session) continue;
+      session.clients.delete(socket);
+      if (session.exit && session.clients.size === 0) sessions.delete(id);
+    }
   });
 });
 
@@ -57,6 +62,7 @@ function handle(socket: Socket, attached: Set<string>, command: TerminalCommand)
         session.terminal = undefined;
         session.exit = { exitCode, signal };
         broadcast(session, { type: 'exit', id: command.id, exitCode, signal });
+        if (session.clients.size === 0) sessions.delete(command.id);
       });
     }
     attach(socket, attached, command.id);
