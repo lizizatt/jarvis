@@ -24,6 +24,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   const store = new Store(join(config.dataDir, 'jarvis.sqlite3'));
   const interrupted = store.interruptActiveTasks();
   const hub = new EventHub();
+  hub.setMaxListeners(0);
   const push = new PushService(store);
   const workers = new WorkerManager();
   const tasks = new TaskManager(store, hub, push, config, workers);
@@ -104,20 +105,21 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   });
   app.get<{ Params: IdParams; Querystring: { after?: string } }>('/api/tasks/:id/events', async (request, reply) => {
     if (!store.getTask(request.params.id)) return reply.code(404).send({ error: 'Task not found' });
-    return store.listEvents(request.params.id, Number(request.query.after ?? 0));
+    const after = parseInt(request.query.after ?? '0', 10);
+    return store.listEvents(request.params.id, isNaN(after) ? 0 : after);
   });
   app.post<{ Params: IdParams; Body: { prompt?: string; kind?: string; questionId?: string } }>('/api/tasks/:id/messages', async (request, reply) => {
     const task = store.getTask(request.params.id);
     if (!task) return reply.code(404).send({ error: 'Task not found' });
     const repository = store.getRepository(task.repositoryId)!;
     if (!request.body?.prompt?.trim()) return reply.code(400).send({ error: 'prompt is required' });
-    try { return await tasks.followUp(task, repository, request.body.prompt,
-      { kind: request.body.kind?.trim() || 'follow_up', questionId: request.body.questionId?.trim() || undefined }); }
+    try { return taskSummary(store, await tasks.followUp(task, repository, request.body.prompt,
+      { kind: request.body.kind?.trim() || 'follow_up', questionId: request.body.questionId?.trim() || undefined })); }
     catch (error) { return sendKnownError(reply, error); }
   });
   app.post<{ Params: IdParams; Body: { confirmed?: boolean; stoppedBy?: string } }>('/api/tasks/:id/stop', async (request, reply) => {
     if (request.body?.confirmed !== true) return reply.code(400).send({ error: 'confirmed must be true' });
-    try { return await tasks.stop(request.params.id, request.body.stoppedBy?.trim() || 'user'); }
+    try { return taskSummary(store, await tasks.stop(request.params.id, request.body.stoppedBy?.trim() || 'user')); }
     catch (error) { return sendKnownError(reply, error); }
   });
   app.delete<{ Params: IdParams }>('/api/tasks/:id', async (request, reply) => {
