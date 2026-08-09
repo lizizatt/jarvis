@@ -49,9 +49,14 @@ pre { font-family: 'IBM Plex Mono', monospace; }
 .page-heading .muted { margin: 0; font-size: .84rem; }
 .heading-actions { display: flex; align-items: center; gap: 8px; }
 
-.ambient-sigil { position: fixed; z-index: -1; right: clamp(-260px, -14vw, -100px); bottom: clamp(-260px, -16vw, -120px); width: clamp(520px, 72vw, 880px); height: auto; pointer-events: none; fill: none; stroke-linecap: square; stroke-width: 1.15; }
-.sigil-crimson { stroke: rgb(213 47 54 / 10%); }
-.sigil-gold { stroke: rgb(239 189 73 / 7%); }
+.ambient-sigil { position: fixed; inset: -6vh -6vw; z-index: -1; pointer-events: none; }
+.virtual-window { overflow: hidden; }
+.virtual-window-canvas, .virtual-window-stars { position: absolute; inset: 0; width: 100%; height: 100%; }
+.virtual-window-canvas { display: block; filter: saturate(108%) brightness(68%); }
+.virtual-window-canvas[data-ready='true'] + .virtual-window-stars { opacity: 0; }
+.virtual-window-stars { background-size: cover; background-position: center; filter: saturate(108%) brightness(68%); transition: opacity .3s ease-out; }
+.virtual-window-glass { position: absolute; z-index: 1; inset: 0; background: linear-gradient(115deg, rgb(255 255 255 / 2.5%), transparent 24%, transparent 72%, rgb(255 255 255 / 1.5%)), radial-gradient(90% 65% at 50% -8%, rgb(255 255 255 / 4%), transparent 62%); mix-blend-mode: screen; }
+.virtual-window-vignette { position: absolute; z-index: 2; inset: -2%; background: radial-gradient(140% 120% at 50% 52%, rgb(213 47 54 / 7%) 0%, rgb(7 9 9 / 46%) 55%, rgb(5 7 7 / 90%) 100%); }
 
 .system-widget { display: flex; flex: 1; align-items: center; justify-content: center; gap: 16px; min-width: 0; height: 44px; padding: 0 12px 0 16px; color: var(--ink); background: var(--surface); border: 1px solid rgb(239 189 73 / 30%); border-radius: 4px; box-shadow: inset 0 0 14px var(--gold-wash); }
 .system-widget-empty { justify-content: flex-start; color: var(--muted); }
