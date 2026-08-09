@@ -36,7 +36,6 @@ interface WorkerTerminalMessage {
   version: 2;
   type: 'complete' | 'failed' | 'stopped';
   taskId: string;
-  error?: string;
   payload?: { error?: string };
 }
 
