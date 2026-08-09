@@ -129,7 +129,7 @@ function boundedHistory(history: TurnMessage['history'], maxInputTokens: number,
 	let characters = 0;
 	for (let index = history.length - 1; index >= 0; index -= 1) {
 		const entry = history[index];
-		if (characters + entry.content.length > budget && selected.length > 0) {
+		if (characters + entry.content.length > budget) {
 			break;
 		}
 		selected.unshift(entry);
