@@ -143,10 +143,16 @@ export class Store {
 
   setTaskState(id: string, state: TaskState, extra: { stoppedBy?: string; exitCode?: number | null } = {}): Task | undefined {
     const now = new Date().toISOString();
-    const stoppedAt = state === 'stopped' ? now : null;
-    this.db.prepare(`UPDATE tasks SET state = ?, updated_at = ?, stopped_by = COALESCE(?, stopped_by),
+    // Transitioning back to an active state clears stale stop fields from a prior stop
+    if (state === 'starting' || state === 'running') {
+      this.db.prepare(`UPDATE tasks SET state = ?, updated_at = ?, stopped_by = NULL, stopped_at = NULL, exit_code = COALESCE(?, exit_code) WHERE id = ?`)
+        .run(state, now, extra.exitCode ?? null, id);
+    } else {
+      const stoppedAt = state === 'stopped' ? now : null;
+      this.db.prepare(`UPDATE tasks SET state = ?, updated_at = ?, stopped_by = COALESCE(?, stopped_by),
       stopped_at = COALESCE(?, stopped_at), exit_code = COALESCE(?, exit_code) WHERE id = ?`)
-      .run(state, now, extra.stoppedBy ?? null, stoppedAt, extra.exitCode ?? null, id);
+        .run(state, now, extra.stoppedBy ?? null, stoppedAt, extra.exitCode ?? null, id);
+    }
     return this.getTask(id);
   }
 
