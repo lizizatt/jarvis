@@ -95,7 +95,7 @@ export async function runAgentTurn(
 				break;
 			}
 		}
-		if (askedUser) return finalText;
+		if (askedUser) { return finalText; }
 		messages.push(vscode.LanguageModelChatMessage.User(results));
 		const toolSignature = toolRoundSignature(outcomes);
 		repeatedToolRounds = nextRepeatedToolRound(previousToolSignature, toolSignature, repeatedToolRounds);
@@ -138,7 +138,7 @@ export function boundedHistory(history: TurnMessage['history'], maxInputTokens: 
 		selected.unshift(entry);
 		characters += entry.content.length;
 	}
-	while (selected.length > 0 && selected[0].role === 'assistant') selected.shift();
+	while (selected.length > 0 && selected[0].role === 'assistant') { selected.shift(); }
 	return selected;
 }
 
