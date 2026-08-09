@@ -169,7 +169,7 @@ export class WorkerManager {
       callbacks.event({ type: message.kind, ...recordPayload(message.payload), data: message.payload });
       return;
     }
-    callbacks.terminal(message.type === 'complete' ? 'completed' : message.type, message.error ?? message.payload?.error);
+    callbacks.terminal(message.type === 'complete' ? 'completed' : message.type, message.payload?.error);
   }
 
   private disconnect(worker: WorkerConnection): void {
