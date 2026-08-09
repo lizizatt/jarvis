@@ -57,6 +57,7 @@ export function useTaskStream(taskId?: string) {
       socket = new WebSocket(`${protocol}//${location.host}/ws/tasks?taskId=${encodeURIComponent(activeTaskId)}`);
       socket.addEventListener('open', () => { retry = 0; void replay(lastSequence.current); });
       socket.addEventListener('message', (message) => {
+        if (!active) return;
         try {
           const event = JSON.parse(String(message.data)) as TaskEvent & { taskId?: string };
           if (event.sequence > lastSequence.current + 1) { void replay(lastSequence.current); return; }
