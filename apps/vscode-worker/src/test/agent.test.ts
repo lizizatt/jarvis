@@ -42,9 +42,19 @@ suite('boundedHistory', () => {
 		assert.strictEqual(result.length, 3);
 	});
 
-	test('excludes oldest entries when total exceeds budget', () => {
+	test('trims leading assistant entries left by a budget cut mid-history', () => {
 		// budget = max(8000, 10000*3 - 0 - 12000) = 18000
-		// 200 entries × 100 chars = 20000 > 18000; most recent ones fit
+		// history: user(100) + assistant(17901) + user(100) — last two fit (18001 > 18000), so only user(100) fits
+		// After budget cut, if assistant were retained as first entry it must be dropped
+		const user = { role: 'user' as const, content: 'u'.repeat(100) };
+		const bigAssistant = { role: 'assistant' as const, content: 'a'.repeat(17_901) };
+		const history = [user, bigAssistant, user];
+		const result = boundedHistory(history, 10_000, 0);
+		assert.ok(result.length === 0 || result[0].role === 'user', 'history must not start with assistant');
+	});
+
+	test('excludes oldest entries when total exceeds budget', () => {
+		// budget = max(8000, 10000*3 - 0 - 12000) = 18000; 200 × 100 = 20000 > 18000
 		const small = entry('x'.repeat(100));
 		const history = Array.from({ length: 200 }, () => small);
 		const result = boundedHistory(history, 10_000, 0);

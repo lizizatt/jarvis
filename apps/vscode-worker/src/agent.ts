@@ -138,6 +138,7 @@ export function boundedHistory(history: TurnMessage['history'], maxInputTokens: 
 		selected.unshift(entry);
 		characters += entry.content.length;
 	}
+	while (selected.length > 0 && selected[0].role === 'assistant') selected.shift();
 	return selected;
 }
 
