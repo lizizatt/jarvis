@@ -80,6 +80,7 @@ export class WorkerManager {
           if (message.type !== 'hello') throw new Error('Worker hello required');
           worker = await this.register(socket, message);
           clearTimeout(helloTimeout);
+          if (socket.readyState !== socket.OPEN) { this.disconnect(worker); }
           return;
         }
         if (message.type === 'hello') {
