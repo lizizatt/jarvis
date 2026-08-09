@@ -131,7 +131,12 @@ export class TaskManager {
       this.running.delete(task.id);
       if (turn.replacement && !turn.stopRequested && !turn.shutdownRequested) {
         this.store.setTaskState(task.id, 'starting');
-        this.launch(this.store.getTask(task.id)!, turn.replacement.repository, turn.replacement.prompt);
+        try {
+          this.launch(this.store.getTask(task.id)!, turn.replacement.repository, turn.replacement.prompt);
+        } catch (error) {
+          this.store.setTaskState(task.id, 'interrupted');
+          this.emit(task.id, 'lifecycle', { state: 'interrupted', reason: (error as Error).message });
+        }
         resolveClose();
         return;
       }
@@ -191,7 +196,12 @@ export class TaskManager {
     this.running.delete(turn.taskId);
     if (turn.replacement && !turn.stopRequested && !turn.shutdownRequested) {
       this.store.setTaskState(turn.taskId, 'starting');
-      this.launch(this.store.getTask(turn.taskId)!, turn.replacement.repository, turn.replacement.prompt);
+      try {
+        this.launch(this.store.getTask(turn.taskId)!, turn.replacement.repository, turn.replacement.prompt);
+      } catch (error) {
+        this.store.setTaskState(turn.taskId, 'interrupted');
+        this.emit(turn.taskId, 'lifecycle', { state: 'interrupted', reason: (error as Error).message });
+      }
       resolveClose();
       return;
     }
@@ -220,13 +230,11 @@ export class TaskManager {
 
   private handleJson(taskId: string, value: unknown): void {
     this.emit(taskId, 'agent_event', value);
-    const text = JSON.stringify(value);
     if (requiresUserInput(value)) {
       const task = this.store.getTask(taskId);
       void this.push.send({ title: 'Agent needs input', body: 'Open Jarvis to respond',
         url: task ? `/repositories/${task.repositoryId}?task=${taskId}` : '/' });
     }
-    this.diagnosePolicy(taskId, text);
   }
 
   private handleStderr(taskId: string, chunk: Buffer): void {
