@@ -169,7 +169,6 @@ export class WorkerManager {
       callbacks.event({ type: message.kind, ...recordPayload(message.payload), data: message.payload });
       return;
     }
-    this.release(worker, message.taskId);
     callbacks.terminal(message.type === 'complete' ? 'completed' : message.type, message.error ?? message.payload?.error);
   }
 
