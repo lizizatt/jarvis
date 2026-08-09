@@ -14,7 +14,7 @@ import { ensureLanding, readPreviewFile, rewritePreviewHtml } from './previews.j
 import { PushService } from './push.js';
 import { TaskManager } from './tasks.js';
 import { TerminalManager } from './terminals.js';
-import type { Repository, ServerConfig } from './types.js';
+import { ACTIVE_TASK_STATES, type Repository, type ServerConfig } from './types.js';
 import { WorkerManager } from './workers.js';
 
 interface IdParams { id: string }
@@ -41,7 +41,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   app.get('/api/workers', async () => workers.list());
 
   app.get('/api/repositories', async () => store.listRepositories().map((repository) => {
-    const activeTask = store.listTasks(repository.id).find((task) => ['starting', 'running', 'stopping'].includes(task.state));
+    const activeTask = store.listTasks(repository.id).find((task) => ACTIVE_TASK_STATES.includes(task.state));
     return { ...repository, previewUrl: `/previews/${repository.id}`,
       activeTask: activeTask ? taskSummary(store, activeTask) : null };
   }));
@@ -68,7 +68,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
       defaultBranch: request.body.defaultBranch === undefined ? current.defaultBranch : request.body.defaultBranch });
   });
   app.delete<{ Params: IdParams }>('/api/repositories/:id', async (request, reply) => {
-    if (store.listTasks(request.params.id).some((task) => ['starting', 'running', 'stopping'].includes(task.state))) {
+    if (store.listTasks(request.params.id).some((task) => ACTIVE_TASK_STATES.includes(task.state))) {
       return reply.code(409).send({ error: 'Repository has an active task' });
     }
     return store.deleteRepository(request.params.id) ? reply.code(204).send() : reply.code(404).send({ error: 'Repository not found' });
@@ -113,7 +113,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     if (!request.body?.prompt?.trim()) return reply.code(400).send({ error: 'prompt is required' });
     try { return await tasks.followUp(task, repository, request.body.prompt,
       { kind: request.body.kind?.trim() || 'follow_up', questionId: request.body.questionId?.trim() || undefined }); }
-    catch (error) { return reply.code(409).send({ error: (error as Error).message }); }
+    catch (error) { return sendKnownError(reply, error); }
   });
   app.post<{ Params: IdParams; Body: { confirmed?: boolean; stoppedBy?: string } }>('/api/tasks/:id/stop', async (request, reply) => {
     if (request.body?.confirmed !== true) return reply.code(400).send({ error: 'confirmed must be true' });
@@ -123,7 +123,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   app.delete<{ Params: IdParams }>('/api/tasks/:id', async (request, reply) => {
     const task = store.getTask(request.params.id);
     if (!task) return reply.code(404).send({ error: 'Task not found' });
-    if (['starting', 'running', 'stopping'].includes(task.state)) return reply.code(409).send({ error: 'Task is still active' });
+    if (ACTIVE_TASK_STATES.includes(task.state)) return reply.code(409).send({ error: 'Task is still active' });
     return store.deleteTask(request.params.id) ? reply.code(204).send() : reply.code(404).send({ error: 'Task not found' });
   });
 
