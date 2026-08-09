@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Cpu, MemoryStick } from 'lucide-react';
+import { ChevronRight, Coins, Cpu, MemoryStick } from 'lucide-react';
 import { useLoad } from '../hooks';
 import { api } from '../api';
 import { memoryPercent } from '../metrics';
@@ -12,10 +12,12 @@ function equalMetrics(current: Awaited<ReturnType<typeof api.metrics>>, next: Aw
 
 export function SystemWidget() {
   const { data, reload } = useLoad(api.metrics, [], equalMetrics);
+  const { data: copilot, reload: reloadCopilot } = useLoad(api.copilotUsage, []);
   useEffect(() => {
     const refresh = window.setInterval(() => void reload(false), 2_000);
-    return () => { window.clearInterval(refresh); };
-  }, [reload]);
+    const refreshCopilot = window.setInterval(() => void reloadCopilot(false), 60_000);
+    return () => { window.clearInterval(refresh); window.clearInterval(refreshCopilot); };
+  }, [reload, reloadCopilot]);
   if (!data?.history) return <Link to="/system" className="system-widget system-widget-empty" aria-label="System performance">
     <span className="muted">System…</span>
   </Link>;
@@ -33,6 +35,10 @@ export function SystemWidget() {
       <span className="system-widget-value">{memPercent.toFixed(0)}<small>%</small></span>
       <DitherSparkline values={memHistory} className="system-widget-spark" cell={1} />
     </div>
+    {copilot != null && <div className="system-widget-metric system-widget-credits">
+      <Coins size={14} />
+      <span className="system-widget-value">{copilot.creditsUsed.toLocaleString()}</span>
+    </div>}
     <ChevronRight className="system-widget-chevron" size={16} aria-hidden="true" />
   </Link>;
 }

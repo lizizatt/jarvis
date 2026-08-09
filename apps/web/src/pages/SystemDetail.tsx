@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Coins } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect } from 'react';
 import { api } from '../api';
@@ -6,7 +6,7 @@ import { useLoad } from '../hooks';
 import { AmbientSigil } from '../components/Sigil';
 import { DitherSparkline } from '../components/DitherSparkline';
 import { formatBytes, memoryPercent } from '../metrics';
-import type { HostMetrics } from '../types';
+import type { CopilotUsage, HostMetrics } from '../types';
 
 function equalMetrics(current: HostMetrics, next: HostMetrics) {
   return current.timestamp === next.timestamp;
@@ -14,10 +14,12 @@ function equalMetrics(current: HostMetrics, next: HostMetrics) {
 
 export function SystemDetail() {
   const { data, error, loading, reload } = useLoad(api.metrics, [], equalMetrics);
+  const { data: copilot, reload: reloadCopilot } = useLoad(api.copilotUsage, []);
   useEffect(() => {
     const refresh = window.setInterval(() => void reload(false), 2_000);
-    return () => { window.clearInterval(refresh); };
-  }, [reload]);
+    const refreshCopilot = window.setInterval(() => void reloadCopilot(false), 60_000);
+    return () => { window.clearInterval(refresh); window.clearInterval(refreshCopilot); };
+  }, [reload, reloadCopilot]);
 
   return <main className="detail-page system-detail" data-testid="system-detail">
     <AmbientSigil />
@@ -25,12 +27,12 @@ export function SystemDetail() {
     <div className="detail-content system-content">
       {loading && !data?.history && <div className="empty">Loading metrics…</div>}
       {error && <div className="notice error" role="alert">{error}</div>}
-      {data?.history && <SystemBody metrics={data} />}
+      {data?.history && <SystemBody metrics={data} copilot={copilot ?? null} />}
     </div>
   </main>;
 }
 
-function SystemBody({ metrics }: { metrics: HostMetrics }) {
+function SystemBody({ metrics, copilot }: { metrics: HostMetrics; copilot: CopilotUsage | null }) {
   const memPercent = memoryPercent(metrics);
   const cpuHistory = metrics.history.map((sample) => sample.cpuPercent);
   const memHistory = metrics.history.map((sample) => memoryPercent(sample));
@@ -49,6 +51,11 @@ function SystemBody({ metrics }: { metrics: HostMetrics }) {
         <DitherSparkline values={memHistory} className="metric-chart" />
         <p className="metric-detail">{formatBytes(metrics.memoryUsedBytes)} used of {formatBytes(metrics.memoryTotalBytes)}</p>
       </div>
+      {copilot && <div className="metric-card">
+        <div className="metric-head"><span>Copilot credits</span><Coins size={14} /></div>
+        <div className="metric-value">{copilot.creditsUsed.toLocaleString()}</div>
+        <p className="metric-detail">Premium interactions this cycle · resets {new Date(copilot.quotaResetDate).toLocaleDateString()}</p>
+      </div>}
     </section>
     <section className="core-grid" aria-label="Per-core load">
       {metrics.perCorePercent.map((percent, index) => <div className="core-row" key={index}>
