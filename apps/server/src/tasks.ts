@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import type { Store } from './database.js';
 import type { EventHub } from './events.js';
 import type { PushService } from './push.js';
@@ -60,6 +61,7 @@ export class TaskManager {
       return this.store.getTask(task.id)!;
     }
     this.assertBackendAvailable(repository);
+    this.assertModelAvailable(repository, task.modelId);
     this.emit(task.id, 'user_message', { text: prompt, followUp: true, ...metadata });
     this.store.setTaskState(task.id, 'starting');
     try { this.launch(this.store.getTask(task.id)!, repository, prompt); }
@@ -205,7 +207,7 @@ export class TaskManager {
       resolveClose();
       return;
     }
-    const state = turn.shutdownRequested || outcome === 'interrupted' ? 'interrupted' : turn.stopRequested ? 'stopped' : outcome;
+    const state = turn.shutdownRequested ? 'interrupted' : turn.stopRequested ? 'stopped' : outcome;
     if (error) this.emit(turn.taskId, 'process_error', { message: error, backend: 'vscode-worker' });
     this.store.setTaskState(turn.taskId, state);
     this.emit(turn.taskId, 'lifecycle', { state, backend: 'vscode-worker' });
@@ -238,10 +240,16 @@ export class TaskManager {
   }
 
   private handleStderr(taskId: string, chunk: Buffer): void {
-    for (let offset = 0; offset < chunk.length; offset += this.config.maxStderrChunkBytes) {
-      const text = chunk.subarray(offset, offset + this.config.maxStderrChunkBytes).toString('utf8');
-      this.emit(taskId, 'stderr', { text });
-      this.diagnosePolicy(taskId, text);
+    const decoder = new StringDecoder('utf8');
+    let remaining = chunk;
+    while (remaining.length > 0) {
+      const slice = remaining.subarray(0, this.config.maxStderrChunkBytes);
+      remaining = remaining.subarray(slice.length);
+      const text = decoder.write(slice) + (remaining.length === 0 ? decoder.end() : '');
+      if (text) {
+        this.emit(taskId, 'stderr', { text });
+        this.diagnosePolicy(taskId, text);
+      }
     }
   }
 
