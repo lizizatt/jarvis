@@ -54,10 +54,10 @@ export class TaskManager {
       if (!turn || turn.stopRequested || turn.shutdownRequested) throw new Error('Task turn cannot accept a follow-up');
       if (turn.replacement) throw conflict('Task already has a follow-up pending');
       turn.replacement = { repository, prompt };
-      this.emit(task.id, 'user_message', { text: prompt, followUp: true, ...metadata });
-      this.emit(task.id, 'lifecycle', { state: 'starting', reason: 'follow_up' });
       try { this.cancel(turn); }
       catch (error) { turn.replacement = undefined; throw error; }
+      this.emit(task.id, 'user_message', { text: prompt, followUp: true, ...metadata });
+      this.emit(task.id, 'lifecycle', { state: 'starting', reason: 'follow_up' });
       await turn.close;
       return this.store.getTask(task.id)!;
     }
@@ -139,6 +139,7 @@ export class TaskManager {
     child.stderr?.on('data', (chunk: Buffer) => this.handleStderr(task.id, stderrDecoder.write(chunk)));
     child.on('error', (error) => this.emit(task.id, 'process_error', { message: error.message, code: (error as NodeJS.ErrnoException).code }));
     child.on('close', (code, signal) => {
+      if (this.running.get(task.id) !== turn) { resolveClose(); return; }
       parser.end();
       const trailingStderr = stderrDecoder.end();
       if (trailingStderr) this.handleStderr(task.id, trailingStderr);
