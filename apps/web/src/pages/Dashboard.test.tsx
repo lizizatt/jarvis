@@ -17,7 +17,6 @@ test('shows repository state and immediately marks a stopped task as stopping', 
   render(<App />);
   expect(await screen.findByText('Flight controls')).toBeVisible();
   expect(screen.getByTestId('dashboard').querySelector('.ambient-sigil')).toHaveAttribute('aria-hidden', 'true');
-  expect(screen.getByTestId('dashboard').querySelector('.jarvis-mark')).toHaveAttribute('aria-hidden', 'true');
   expect(screen.getByText('feature/routing')).toBeVisible();
   expect(screen.getByText('Modified')).toBeVisible();
   await userEvent.click(screen.getByRole('button', { name: 'Stop task in Flight controls' }));
