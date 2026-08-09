@@ -108,7 +108,12 @@ export class TaskManager {
     const turns = [...this.running.values()];
     for (const turn of turns) {
       turn.shutdownRequested = true;
-      this.cancel(turn);
+      try { this.cancel(turn); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+          this.running.delete(turn.taskId);
+          this.store.setTaskState(turn.taskId, 'interrupted');
+        }
+      }
     }
     await Promise.all(turns.map((turn) => turn.close));
   }
