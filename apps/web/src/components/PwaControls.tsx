@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, Compass, Download, X } from 'lucide-react';
 import { api } from '../api';
 import {
@@ -86,11 +87,11 @@ export function PwaControls() {
 
   return <>
     <button className="icon-button" aria-label="App and notification settings" onClick={() => setOpen(true)}><Bell /></button>
-    {open && <div className="modal-backdrop"><section className="modal compact-modal" role="dialog" aria-modal="true" aria-labelledby="device-title"><header><div><p className="eyebrow">This device</p><h2 id="device-title">App settings</h2></div><button className="icon-button" aria-label="Close" onClick={() => setOpen(false)}><X /></button></header>
+    {open && createPortal(<div className="modal-backdrop"><section className="modal compact-modal" role="dialog" aria-modal="true" aria-labelledby="device-title"><header><div><p className="eyebrow">This device</p><h2 id="device-title">App settings</h2></div><button className="icon-button" aria-label="Close" onClick={() => setOpen(false)}><X /></button></header>
       <div className="setting-row"><div><strong>Install Jarvis</strong><p>{iosInstallHint ? 'On iPhone/iPad: Share → Add to Home Screen.' : 'Keep it in your app launcher for quick access.'}</p></div><button className="button secondary" onClick={() => void install()} disabled={!installPrompt}><Download size={17} />{installPrompt ? 'Install' : 'Installed'}</button></div>
       <div className="setting-row"><div><strong>Work alerts</strong><p>Questions, task results, and PR updates.</p></div><button className="button secondary" onClick={() => void enablePush()} disabled={notifications === 'granted'}><Bell size={17} />{notifications === 'granted' ? 'Enabled' : 'Enable'}</button></div>
       <div className="setting-row"><div><strong>Motion background</strong><p>{motionPermission === 'unsupported' ? 'Not available in this browser.' : 'Allow motion sensors so the starfield follows device rotation.'}</p></div><button className="button secondary" onClick={() => void toggleMotion()} disabled={motionPermission === 'unsupported'}><Compass size={17} />{motionEnabled ? 'Disable' : 'Enable'}</button></div>
       {message && <p className="notice">{message}</p>}
-    </section></div>}
+    </section></div>, document.body)}
   </>;
 }
