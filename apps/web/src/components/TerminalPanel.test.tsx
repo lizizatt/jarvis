@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { api } from '../api';
 import { TerminalPanel } from './TerminalPanel';
@@ -57,6 +57,7 @@ afterEach(() => {
 test('shows a terminal protocol failure and does not reconnect after it', async () => {
   render(<TerminalPanel repositoryId="repo-1" />);
   await screen.findByTestId('terminal');
+  await waitFor(() => expect(SocketMock.instances).toHaveLength(1));
   const socket = SocketMock.instances[0];
 
   await act(async () => {
@@ -78,6 +79,7 @@ test('shows a terminal protocol failure and does not reconnect after it', async 
 test('sends Ctrl+C through the live terminal socket and keeps terminal focus', async () => {
   render(<TerminalPanel repositoryId="repo-1" />);
   await screen.findByTestId('terminal');
+  await waitFor(() => expect(SocketMock.instances).toHaveLength(1));
   const socket = SocketMock.instances[0];
 
   await act(async () => {

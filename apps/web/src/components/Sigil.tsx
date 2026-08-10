@@ -82,7 +82,7 @@ export function AmbientSigil() {
         const angles = anglesFromRelativeQuaternion(relative);
 
         if (!referenceAngles) {
-          referenceAngles = { pitch: angles.pitch, yaw: angles.yaw };
+          referenceAngles = { pitch: 0, yaw: 0 };
           unwrappedPitch = angles.pitch;
           unwrappedYaw = angles.yaw;
         } else {
