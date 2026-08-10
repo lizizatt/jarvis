@@ -222,10 +222,15 @@ function recordPayload(value: unknown): Record<string, unknown> {
 }
 export function modelHistory(events: TaskEvent[], currentPrompt: string): Array<{ role: 'user' | 'assistant'; content: string }> {
   const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  const currentPromptIndex = events.findLastIndex((event) => {
+  let currentPromptIndex = -1;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
     const payload = recordPayload(event.payload);
-    return event.kind === 'user_message' && payload.text === currentPrompt;
-  });
+    if (event.kind === 'user_message' && payload.text === currentPrompt) {
+      currentPromptIndex = index;
+      break;
+    }
+  }
   for (const [index, event] of events.entries()) {
     const payload = recordPayload(event.payload);
     if (index !== currentPromptIndex && event.kind === 'user_message' && typeof payload.text === 'string') {
