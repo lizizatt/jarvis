@@ -424,6 +424,24 @@ describe('server MVP', () => {
     worker.socket.close();
   });
 
+  it('interrupts a worker task when cancellation times out', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    const worker = await connectWorker(address, sandbox.repository);
+    const task = (await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
+      payload: { prompt: 'worker timeout' } })).json() as Task;
+    await takeWorkerMessage(worker, 'turn');
+
+    const stoppedResponse = app.inject({ method: 'POST', url: `/api/tasks/${task.id}/stop`,
+      payload: { confirmed: true, stoppedBy: 'integration-test' } });
+    expect(await takeWorkerMessage(worker, 'cancel')).toMatchObject({ taskId: task.id });
+    await waitFor(async () => (await taskFrom(app, task.id)).state === 'interrupted', 7_000);
+    expect((await stoppedResponse).json()).toMatchObject({ state: 'interrupted', stoppedBy: 'integration-test' });
+    worker.socket.close();
+  }, 8_000);
+
   it('interrupts a worker task when its connection drops', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));

@@ -226,7 +226,7 @@ export class TaskManager {
       resolveClose();
       return;
     }
-    const state = turn.shutdownRequested ? 'interrupted' : turn.stopRequested ? 'stopped' : outcome;
+    const state = turn.shutdownRequested || outcome === 'interrupted' ? 'interrupted' : turn.stopRequested ? 'stopped' : outcome;
     if (error) this.emit(turn.taskId, 'process_error', { message: error, backend: 'vscode-worker' });
     this.store.setTaskState(turn.taskId, state);
     this.emit(turn.taskId, 'lifecycle', { state, backend: 'vscode-worker' });
