@@ -3,6 +3,8 @@ import { vi } from 'vitest';
 import { api } from '../api';
 import { TerminalPanel } from './TerminalPanel';
 
+const terminalInstances = vi.hoisted((): Array<{ focus: ReturnType<typeof vi.fn> }> => []);
+
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80;
@@ -16,6 +18,7 @@ vi.mock('@xterm/xterm', () => ({
     write = vi.fn();
     writeln = vi.fn();
     dispose = vi.fn();
+    constructor() { terminalInstances.push(this); }
   },
 }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = vi.fn(); } }));
@@ -41,6 +44,7 @@ class SocketMock {
 
 beforeEach(() => {
   SocketMock.instances = [];
+  terminalInstances.length = 0;
   vi.stubGlobal('WebSocket', SocketMock);
   vi.spyOn(api, 'terminals').mockResolvedValue([{ id: 'terminal-1', name: 'shell', status: 'running' }]);
 });
@@ -69,4 +73,20 @@ test('shows a terminal protocol failure and does not reconnect after it', async 
   expect(screen.getByRole('alert')).toHaveTextContent('Terminal session has exited');
   expect(screen.getByTestId('terminal-connection-state')).toHaveTextContent('Terminal failed');
   expect(SocketMock.instances).toHaveLength(1);
+});
+
+test('sends Ctrl+C through the live terminal socket and keeps terminal focus', async () => {
+  render(<TerminalPanel repositoryId="repo-1" />);
+  await screen.findByTestId('terminal');
+  const socket = SocketMock.instances[0];
+
+  await act(async () => {
+    socket.readyState = SocketMock.OPEN;
+    socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ type: 'ready', id: 'terminal-1' }) }));
+  });
+  await screen.findByRole('button', { name: 'Send Ctrl+C to terminal' });
+  await screen.getByRole('button', { name: 'Send Ctrl+C to terminal' }).click();
+
+  expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ action: 'input', data: '\u0003' }));
+  expect(terminalInstances[0].focus).toHaveBeenCalled();
 });

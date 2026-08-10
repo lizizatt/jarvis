@@ -33,6 +33,14 @@ test('runs and stops an agent from the repository workspace', async ({ page }, t
   if (!await terminal.isVisible()) await newShell.click();
   await expect(terminal).toBeVisible();
   await expect(page.getByTestId('terminal-connection-state')).toHaveText('Live');
+  await expect(page.getByRole('button', { name: 'Send Ctrl+C to terminal' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Send Ctrl+C to terminal' }).click();
+  await expect(page.getByLabel('Terminal input')).toBeFocused();
+  const terminalBounds = await terminal.boundingBox();
+  const viewportHeight = await page.evaluate(() => window.innerHeight);
+  expect(terminalBounds).not.toBeNull();
+  expect(Math.abs(viewportHeight - (terminalBounds?.y ?? 0) - (terminalBounds?.height ?? 0))).toBeLessThan(32);
+  await page.screenshot({ path: testInfo.outputPath('terminal.png') });
   const terminalInput = page.getByTestId('terminal').locator('.xterm-helper-textarea');
   await terminalInput.pressSequentially('printf JARVIS_TERMINAL_E2E');
   await terminalInput.press('Enter');

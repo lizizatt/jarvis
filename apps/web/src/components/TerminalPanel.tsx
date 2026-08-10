@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { CircleX, Plus } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -9,7 +9,11 @@ import type { TerminalSession } from '../types';
 
 type ConnectionState = 'connecting' | 'live' | 'disconnected' | 'failed';
 
-function XtermSession({ session, onExit }: { session: TerminalSession; onExit: () => void }) {
+function XtermSession({ session, onExit, onInterruptAvailable }: {
+  session: TerminalSession;
+  onExit: () => void;
+  onInterruptAvailable: (interrupt?: () => void) => void;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
   const reconnectable = useRef(true);
@@ -63,7 +67,6 @@ function XtermSession({ session, onExit }: { session: TerminalSession; onExit: (
     let reconnectTimer: number | undefined;
     let retry = 0;
     let active = true;
-    let viewportHandler: (() => void) | undefined;
     const updateConnectionState = (state: ConnectionState) => {
       connectionStateRef.current = state;
       setConnectionState(state);
@@ -113,6 +116,10 @@ function XtermSession({ session, onExit }: { session: TerminalSession; onExit: (
     const send = (value: object) => {
       if (connectionStateRef.current === 'live' && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
     };
+    onInterruptAvailable(() => {
+      send({ action: 'input', data: '\u0003' });
+      focusTerminal();
+    });
     const fitAndResize = () => {
       fit.fit();
       send({ action: 'resize', cols: terminal.cols, rows: terminal.rows });
@@ -122,19 +129,11 @@ function XtermSession({ session, onExit }: { session: TerminalSession; onExit: (
     observer.observe(host.current);
     host.current.addEventListener('click', focusTerminal);
     host.current.addEventListener('touchstart', focusTerminal, { passive: true });
-    if (window.visualViewport) {
-      viewportHandler = () => window.requestAnimationFrame(() => fitAndResize());
-      window.visualViewport.addEventListener('resize', viewportHandler);
-      window.visualViewport.addEventListener('scroll', viewportHandler);
-    }
     focusTerminal();
     return () => {
       active = false;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
-      if (viewportHandler && window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', viewportHandler);
-        window.visualViewport.removeEventListener('scroll', viewportHandler);
-      }
+      onInterruptAvailable();
       host.current?.removeEventListener('click', focusTerminal);
       host.current?.removeEventListener('touchstart', focusTerminal);
       observer.disconnect();
@@ -156,6 +155,7 @@ export function TerminalPanel({ repositoryId }: { repositoryId: string }) {
   const { data: sessions = [], setData, loading, error } = useLoad(() => api.terminals(repositoryId), [repositoryId]);
   const [selected, setSelected] = useState<string>();
   const [createError, setCreateError] = useState('');
+  const [interrupt, setInterrupt] = useState<(() => void) | undefined>();
   const current = sessions.find((session) => session.id === selected && session.status !== 'exited')
     ?? sessions.find((session) => session.status !== 'exited');
   async function create() {
@@ -167,16 +167,21 @@ export function TerminalPanel({ repositoryId }: { repositoryId: string }) {
       setData([...sessions, session]); setSelected(session.id); setCreateError('');
     } catch (reason) { setCreateError(reason instanceof Error ? reason.message : 'Could not create terminal'); }
   }
+  function setInterruptAvailable(next?: () => void) { setInterrupt(() => next); }
   return <div className="terminal-view">
-    <div className="section-toolbar">
+    <div className="section-toolbar terminal-toolbar">
       <select aria-label="Terminal session" value={current?.id ?? ''} onChange={(event) => setSelected(event.target.value)} disabled={!sessions.length}>
         {sessions.map((session) => <option value={session.id} key={session.id}>{session.name ?? 'shell'}{session.status === 'exited' ? ' (exited)' : ''}</option>)}
       </select>
-      <button className="button secondary compact" onClick={() => void create()}><Plus size={16} />New shell</button>
+      <div className="terminal-actions">
+        <button className="icon-button terminal-interrupt" aria-label="Send Ctrl+C to terminal" title="Interrupt running process (Ctrl+C)" onClick={() => interrupt?.()} disabled={!interrupt}><CircleX /></button>
+        <button className="button secondary compact" onClick={() => void create()}><Plus size={16} />New shell</button>
+      </div>
     </div>
     {(error || createError) && <div className="notice error">{error || createError}</div>}
     {loading ? <div className="empty compact-empty">Finding persistent sessions…</div> : current ? <XtermSession session={current}
-      onExit={() => setData(sessions.map((session) => session.id === current.id ? { ...session, status: 'exited' } : session))} />
+      onExit={() => setData(sessions.map((session) => session.id === current.id ? { ...session, status: 'exited' } : session))}
+      onInterruptAvailable={setInterruptAvailable} />
       : <div className="empty"><h2>No running terminal</h2><p>Create a persistent shell for this checkout.</p><button className="button primary" onClick={() => void create()}><Plus size={16} />New shell</button></div>}
   </div>;
 }

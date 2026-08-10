@@ -227,6 +227,11 @@ input::placeholder, textarea::placeholder { color: #747c79; }
 .check-failure { color: #f05a60; background: var(--red-wash); border-color: rgb(213 47 54 / 28%); }
 .section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 13px 0 9px; }
 .section-toolbar select { width: auto; max-width: 60%; }
+.terminal-view { display: flex; flex-direction: column; height: calc(100vh - 122px); min-height: 0; }
+.terminal-toolbar { flex: 0 0 auto; }
+.terminal-toolbar select { flex: 1; min-width: 0; }
+.terminal-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.terminal-interrupt { color: #f05a60; border-color: rgb(213 47 54 / 66%); }
 .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 3px; background: #0d1010; border: 1px solid var(--line); border-radius: 4px; }
 .segmented button { min-height: 44px; padding: 0 13px; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 2px; font-size: .72rem; font-weight: 700; }
 .segmented button.active { color: var(--gold); background: var(--gold-wash); border-bottom-color: var(--gold); box-shadow: none; }
@@ -251,7 +256,7 @@ input::placeholder, textarea::placeholder { color: #747c79; }
 .terminal-connection-live { color: var(--green); }
 .terminal-connection-disconnected { color: var(--gold); }
 .terminal-connection-failed { color: #f05a60; }
-.terminal-host { height: calc(100dvh - 222px); min-height: 390px; padding: 8px; background: #050707; border: 1px solid #252a29; touch-action: manipulation; }
+.terminal-host { flex: 1; min-height: 0; padding: 8px; background: #050707; border: 1px solid #252a29; touch-action: manipulation; }
 .xterm { height: 100%; }
 .xterm-screen, .xterm-viewport, .xterm textarea { touch-action: manipulation; }
 .preview-view { display: flex; flex-direction: column; height: calc(100vh - 122px); padding: 0; }
@@ -310,7 +315,7 @@ input::placeholder, textarea::placeholder { color: #747c79; }
   .task-sidebar { min-height: calc(100vh - 74px); }
   .task-composer { left: 338px; }
   .preview-view { height: calc(100vh - 74px); }
-  .terminal-host { height: calc(100vh - 168px); }
+  .terminal-view { height: calc(100vh - 74px); }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; } }
