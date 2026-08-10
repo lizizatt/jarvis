@@ -156,8 +156,10 @@ export class WorkerManager {
 
   private async update(worker: WorkerConnection, hello: WorkerHello): Promise<void> {
     if (hello.workerId !== worker.workerId) throw new Error('Worker ID cannot change');
+    const roots = [...hello.workspaceRoots];
+    const workspaceRoots = [...new Set(await Promise.all(roots.map((root) => realpath(root))))];
     worker.windowName = hello.windowName;
-    worker.workspaceRoots = [...new Set(await Promise.all(hello.workspaceRoots.map((root) => realpath(root))))];
+    worker.workspaceRoots = workspaceRoots;
     worker.models = hello.models;
     worker.socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'ready', workerId: worker.workerId }));
   }
