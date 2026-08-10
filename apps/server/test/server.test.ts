@@ -13,6 +13,7 @@ import { normalizePullRequest } from '../src/git.js';
 import { readPreviewFile } from '../src/previews.js';
 import { JsonLineParser } from '../src/tasks.js';
 import type { ServerConfig, Task } from '../src/types.js';
+import { modelHistory } from '../src/workers.js';
 
 const execFileAsync = promisify(execFile);
 const fixtureAgent = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/agent.mjs');
@@ -567,6 +568,39 @@ describe('bounded JSONL parser', () => {
     parser.write(Buffer.from('discarded-tail\n{"next":true}\n'));
     expect(values).toEqual([{ ok: true }, { type: 'raw_stdout', text: 'raw' },
       { type: 'parse_error', reason: 'line_too_large', bytes: 17 }, { next: true }]);
+  });
+});
+
+describe('worker model history', () => {
+  const event = (sequence: number, kind: string, payload: unknown) => ({
+    id: sequence, taskId: 'task', sequence, kind, payload, createdAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  it('removes only the latest occurrence of the current prompt', () => {
+    expect(modelHistory([
+      event(1, 'user_message', { text: 'repeat' }),
+      event(2, 'agent_event', { type: 'text', text: 'Acknowledged.' }),
+      event(3, 'user_message', { text: 'repeat' }),
+    ], 'repeat')).toEqual([
+      { role: 'user', content: 'repeat' },
+      { role: 'assistant', content: 'Acknowledged.' },
+    ]);
+  });
+
+  it('returns no history when every stored message is the current prompt', () => {
+    expect(modelHistory([event(1, 'user_message', { text: 'current prompt' })], 'current prompt')).toEqual([]);
+  });
+
+  it('merges consecutive agent text chunks into one assistant message', () => {
+    expect(modelHistory([
+      event(1, 'user_message', { text: 'first prompt' }),
+      event(2, 'agent_event', { type: 'text', text: 'First ' }),
+      event(3, 'agent_event', { type: 'text', text: 'response.' }),
+      event(4, 'user_message', { text: 'current prompt' }),
+    ], 'current prompt')).toEqual([
+      { role: 'user', content: 'first prompt' },
+      { role: 'assistant', content: 'First response.' },
+    ]);
   });
 });
 
