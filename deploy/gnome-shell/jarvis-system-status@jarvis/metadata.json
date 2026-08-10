@@ -1,0 +1,7 @@
+{
+  "uuid": "jarvis-system-status@jarvis",
+  "name": "Jarvis System Status",
+  "description": "Shows Jarvis host CPU, memory, and Copilot credit usage in the top panel.",
+  "shell-version": ["46"],
+  "url": "https://github.com/liz-izatt/jarvis"
+}

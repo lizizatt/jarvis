@@ -1,12 +1,5 @@
 # TODO
 
-- [x] Make models selectable per conversation and display the active model.
-- [x] Remove the fixed 12-tool-round failure mode.
-- [x] Ensure agent questions display their full prompt and answer controls.
-- [x] Keep generated artifacts ignored and untracked.
-- [x] Feasibility study of introducing dither-kit for unified stylistic display elements ([study and style options](docs/design/dither-kit-feasibility/README.md))
-- [x] Prevent background repository refreshes from replacing the dashboard with "Loading repositories".
-- [x] HTOP style processor and memory load display using dither-kit, widget on top of homepage replacing functionless top bar contents.  Widget can be clicked for a more detailed full screen system performance view.  Have a subagent look at screenshots of both homepage with widget and each until it is satisfied with the sleek, professional, and usable mobile experience maintaining our design standards.  Keep the sigil icon in the top left corner, fill the rest of the top bar with the system performance widget, and remove the "laptop control pane" "repositories" "3 server managed checkouts" elements.
 - [ ] Debug and tune the digital window pitch/yaw response on a physical iPhone; direction is correct, but sensitivity, smoothing, and axis coupling still do not feel fully native.
 - [ ] Make the terminal view more usable -- do a design review with some subagents on how other apps solve the terminal-in-your-phone design challenge, then implement it
 - [ ] N+1 query pattern on `GET /api/repositories`: for each repo `listTasks()` runs one query, then `taskSummary()` calls `listEvents()` for each active task (N+M queries per Dashboard poll every 2s). Fix by adding a `listAllActiveTasks()` query across all repos in one SQL call, or a JOIN to `listTasks` that includes `latestEvent`. See `apps/server/src/app.ts` and `apps/server/src/database.ts`.
@@ -15,6 +8,3 @@
 - [ ] `modelHistory()` in `apps/server/src/workers.ts` has no unit test. Export the function and add tests for: current-prompt appearing multiple times (only last removed), all history exceeding budget (empty result), consecutive agent_event text chunks merged into one assistant entry. See `apps/server/test/`.
 - [ ] Worker cancel timeout (5-second `setTimeout` in `tasks.ts cancel()`) is untested. Add an integration test where the worker receives `'cancel'` but never responds; assert the task transitions to `'interrupted'` after the timeout.
 - [ ] Async race in `WorkerManager.update()`: the `realpath` await gap allows a concurrent `dispatch()` call to read stale `workspaceRoots`. Low probability but could cause a dispatched task to fail if VS Code opens a new folder at the exact moment a task starts. Fix: snapshot roots before await, swap atomically after.
-- [x] Improve the agent view and iterate on phone screenshots until a critical subagent approves it.
-- [x] Apply the high-contrast graphite, hot-rod red, and gold visual system across each pane and obtain critical visual approval.
-- [ ] Implement an ubuntu top system bar usage view mirroring what we see in the app's home page -- cpu, ram, and credit usage.
