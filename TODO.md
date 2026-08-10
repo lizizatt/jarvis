@@ -17,3 +17,4 @@
 - [ ] Async race in `WorkerManager.update()`: the `realpath` await gap allows a concurrent `dispatch()` call to read stale `workspaceRoots`. Low probability but could cause a dispatched task to fail if VS Code opens a new folder at the exact moment a task starts. Fix: snapshot roots before await, swap atomically after.
 - [x] Improve the agent view and iterate on phone screenshots until a critical subagent approves it.
 - [x] Apply the high-contrast graphite, hot-rod red, and gold visual system across each pane and obtain critical visual approval.
+- [ ] Implement an ubuntu top system bar usage view mirroring what we see in the app's home page -- cpu, ram, and credit usage.

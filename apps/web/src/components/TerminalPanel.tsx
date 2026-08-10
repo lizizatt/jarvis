@@ -7,9 +7,15 @@ import { api } from '../api';
 import { useLoad } from '../hooks';
 import type { TerminalSession } from '../types';
 
+type ConnectionState = 'connecting' | 'live' | 'disconnected' | 'failed';
+
 function XtermSession({ session, onExit }: { session: TerminalSession; onExit: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
+  const reconnectable = useRef(true);
+  const connectionStateRef = useRef<ConnectionState>('connecting');
+  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
+  const [connectionError, setConnectionError] = useState('');
   onExitRef.current = onExit;
   useEffect(() => {
     if (!host.current) return;
@@ -58,26 +64,55 @@ function XtermSession({ session, onExit }: { session: TerminalSession; onExit: (
     let retry = 0;
     let active = true;
     let viewportHandler: (() => void) | undefined;
+    const updateConnectionState = (state: ConnectionState) => {
+      connectionStateRef.current = state;
+      setConnectionState(state);
+    };
     const focusTerminal = () => {
       terminal.focus();
       window.setTimeout(() => terminal.focus(), 0);
     };
     function connect() {
+      updateConnectionState(retry ? 'disconnected' : 'connecting');
       socket = new WebSocket(`${protocol}//${location.host}/ws/terminals/${encodeURIComponent(session.id)}`);
       socket.addEventListener('open', () => { retry = 0; socket?.send(JSON.stringify({ action: 'resize', cols: terminal.cols, rows: terminal.rows })); });
       socket.addEventListener('message', (frame) => {
-        const message = JSON.parse(String(frame.data)) as { type: string; data?: string; replay?: string; exitCode?: number };
-        if (message.type === 'ready' && message.replay) { terminal.reset(); terminal.write(message.replay); }
+        const message = JSON.parse(String(frame.data)) as { type: string; data?: string; replay?: string; exitCode?: number; message?: string };
+        if (message.type === 'ready') {
+          updateConnectionState('live');
+          setConnectionError('');
+          if (message.replay) { terminal.reset(); terminal.write(message.replay); }
+        }
         if (message.type === 'output') terminal.write(message.data ?? '');
-        if (message.type === 'exit') { terminal.writeln(`\r\n[process exited: ${message.exitCode ?? 'unknown'}]`); onExitRef.current(); }
-        if (message.type === 'missing') { terminal.writeln('\r\n[terminal process is no longer available]'); onExitRef.current(); }
+        if (message.type === 'exit') {
+          reconnectable.current = false;
+          terminal.writeln(`\r\n[process exited: ${message.exitCode ?? 'unknown'}]`);
+          onExitRef.current();
+        }
+        if (message.type === 'missing') {
+          reconnectable.current = false;
+          terminal.writeln('\r\n[terminal process is no longer available]');
+          onExitRef.current();
+        }
+        if (message.type === 'error') {
+          reconnectable.current = false;
+          updateConnectionState('failed');
+          setConnectionError(message.message || 'Terminal protocol error');
+          socket?.close();
+        }
       });
+      socket.addEventListener('error', () => setConnectionError('Terminal connection failed. Retrying…'));
       socket.addEventListener('close', () => {
-        if (active) reconnectTimer = window.setTimeout(connect, Math.min(10_000, 500 * 2 ** retry++));
+        if (active && reconnectable.current) {
+          updateConnectionState('disconnected');
+          reconnectTimer = window.setTimeout(connect, Math.min(10_000, 500 * 2 ** retry++));
+        }
       });
     }
     connect();
-    const send = (value: object) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
+    const send = (value: object) => {
+      if (connectionStateRef.current === 'live' && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
+    };
     const fitAndResize = () => {
       fit.fit();
       send({ action: 'resize', cols: terminal.cols, rows: terminal.rows });
@@ -108,7 +143,13 @@ function XtermSession({ session, onExit }: { session: TerminalSession; onExit: (
       terminal.dispose();
     };
   }, [session.id]);
-  return <div className="terminal-host" ref={host} data-testid="terminal" />;
+  return <>
+    <div className={`terminal-connection terminal-connection-${connectionState}`} data-testid="terminal-connection-state" role="status">
+      {connectionState === 'live' ? 'Live' : connectionState === 'connecting' ? 'Connecting…' : connectionState === 'disconnected' ? 'Disconnected; reconnecting…' : 'Terminal failed'}
+    </div>
+    {connectionError && <div className="notice error" role="alert">{connectionError}</div>}
+    <div className="terminal-host" ref={host} data-testid="terminal" />
+  </>;
 }
 
 export function TerminalPanel({ repositoryId }: { repositoryId: string }) {

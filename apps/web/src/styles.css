@@ -247,6 +247,10 @@ input::placeholder, textarea::placeholder { color: #747c79; }
 .diff-deletion { color: #f18489; background: rgb(213 47 54 / 9%); }
 .diff-header { color: #b8bfbd; }
 .diff-hunk { color: #89928f; }
+.terminal-connection { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0; }
+.terminal-connection-live { color: var(--green); }
+.terminal-connection-disconnected { color: var(--gold); }
+.terminal-connection-failed { color: #f05a60; }
 .terminal-host { height: calc(100dvh - 222px); min-height: 390px; padding: 8px; background: #050707; border: 1px solid #252a29; touch-action: manipulation; }
 .xterm { height: 100%; }
 .xterm-screen, .xterm-viewport, .xterm textarea { touch-action: manipulation; }

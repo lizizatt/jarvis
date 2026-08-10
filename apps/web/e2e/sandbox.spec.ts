@@ -28,12 +28,20 @@ test('runs and stops an agent from the repository workspace', async ({ page }, t
   await expect(page.getByTestId('repository-diff')).toContainText('uncommitted sandbox change');
 
   await page.getByTestId('tab-terminal').click();
-  await expect(page.getByTestId('terminal')).toBeVisible();
+  const terminal = page.getByTestId('terminal');
+  const newShell = page.locator('.section-toolbar').getByRole('button', { name: 'New shell' });
+  if (!await terminal.isVisible()) await newShell.click();
+  await expect(terminal).toBeVisible();
+  await expect(page.getByTestId('terminal-connection-state')).toHaveText('Live');
+  const terminalInput = page.getByTestId('terminal').locator('.xterm-helper-textarea');
+  await terminalInput.pressSequentially('printf JARVIS_TERMINAL_E2E');
+  await terminalInput.press('Enter');
+  await expect(page.locator('.xterm-rows')).toContainText('JARVIS_TERMINAL_E2E');
   const terminalSelector = page.getByLabel('Terminal session');
   const initialTerminalCount = await terminalSelector.locator('option').count();
-  await page.getByRole('button', { name: 'New shell' }).click();
+  await newShell.click();
   await expect(terminalSelector.locator('option')).toHaveCount(initialTerminalCount + 1);
-  await page.getByRole('button', { name: 'New shell' }).click();
+  await newShell.click();
   await expect(terminalSelector.locator('option')).toHaveCount(initialTerminalCount + 2);
 
   await page.getByTestId('tab-preview').click();
