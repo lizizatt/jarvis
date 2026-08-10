@@ -35,19 +35,21 @@ export function mergeOrdered(current: TaskEvent[], incoming: TaskEvent[]) {
 }
 
 export function useTaskStream(taskId?: string) {
-  const [events, setEvents] = useState<TaskEvent[]>([]);
+  const [stream, setStream] = useState({ taskId, events: [] as TaskEvent[] });
   const lastSequence = useRef(0);
   useEffect(() => {
-    if (!taskId) { setEvents([]); return; }
+    if (!taskId) { setStream({ taskId, events: [] }); return; }
     const activeTaskId = taskId;
     let active = true;
     async function replay(after = lastSequence.current) {
       const next = await api.events(activeTaskId, after);
       if (!active) return;
-      setEvents((current) => mergeOrdered(current, next));
+      setStream((current) => current.taskId === activeTaskId
+        ? { taskId: activeTaskId, events: mergeOrdered(current.events, next) }
+        : current);
       lastSequence.current = Math.max(lastSequence.current, ...next.map((event) => event.sequence), 0);
     }
-    setEvents([]); lastSequence.current = 0; void replay(0);
+    setStream({ taskId: activeTaskId, events: [] }); lastSequence.current = 0; void replay(0);
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     let socket: WebSocket | undefined;
     let reconnectTimer: number | undefined;
@@ -63,7 +65,9 @@ export function useTaskStream(taskId?: string) {
           if (typeof event.sequence !== 'number') { void replay(lastSequence.current); return; }
           if (event.sequence > lastSequence.current + 1) { void replay(lastSequence.current); return; }
           lastSequence.current = Math.max(lastSequence.current, event.sequence);
-          setEvents((current) => mergeOrdered(current, [event]));
+          setStream((current) => current.taskId === activeTaskId
+            ? { taskId: activeTaskId, events: mergeOrdered(current.events, [event]) }
+            : current);
         } catch { void replay(lastSequence.current); }
       });
       socket.addEventListener('close', () => {
@@ -73,5 +77,5 @@ export function useTaskStream(taskId?: string) {
     connect();
     return () => { active = false; if (reconnectTimer) window.clearTimeout(reconnectTimer); socket?.close?.(); };
   }, [taskId]);
-  return events;
+  return stream.taskId === taskId ? stream.events : [];
 }

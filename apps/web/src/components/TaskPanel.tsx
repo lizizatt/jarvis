@@ -9,25 +9,36 @@ import type { TaskSummary } from '../types';
 export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSummary; onTaskChange: (task: TaskSummary) => void }) {
   const [task, setTask] = useState(initialTask);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
   const events = useTaskStream(task.id);
   const topRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const lastLifecycle = useRef<{ taskId: string; sequence: number } | undefined>(undefined);
   useEffect(() => { setTask(initialTask); }, [initialTask]);
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' }); }, [events.length]);
   useEffect(() => {
     const lifecycle = [...events].reverse().find((event) => event.type === 'task_state') as (typeof events[number] & { state?: TaskSummary['status'] }) | undefined;
-    if (lifecycle?.state && lifecycle.state !== task.status) { const updated = { ...task, status: lifecycle.state }; setTask(updated); onTaskChange(updated); }
+    const previous = lastLifecycle.current;
+    if (!lifecycle?.state || (previous?.taskId === task.id && lifecycle.sequence <= previous.sequence)) return;
+    lastLifecycle.current = { taskId: task.id, sequence: lifecycle.sequence };
+    if (lifecycle.state !== task.status) { const updated = { ...task, status: lifecycle.state }; setTask(updated); onTaskChange(updated); }
   }, [events, onTaskChange, task]);
 
   function scrollToTop() { topRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }
   function scrollToBottom() { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' }); }
 
-  async function send(text: string, questionId?: string, approval = false) {
-    if (!text.trim() || sending || task.status === 'stopping') return;
+  async function send(text: string, questionId?: string, approval = false): Promise<boolean> {
+    if (!text.trim() || sending || task.status === 'stopping') return false;
     setSending(true);
+    setSendError('');
     try {
       const updated = await api.message(task.id, text.trim(), approval ? 'approval' : questionId ? 'answer' : 'follow_up', questionId);
       setTask(updated); onTaskChange(updated);
+      return true;
+    }
+    catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Unable to send message');
+      return false;
     }
     finally { setSending(false); }
   }
@@ -36,7 +47,7 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
     event.preventDefault();
     const form = event.currentTarget;
     const input = new FormData(form).get('message')?.toString() ?? '';
-    await send(input); form.reset();
+    if (await send(input)) form.reset();
   }
 
   async function stop() {
@@ -60,6 +71,7 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
     <Timeline events={events} onAnswer={send} />
     <div ref={endRef} className="scroll-anchor" />
     <div className="task-composer">
+      {sendError && <p className="form-error" role="alert">{sendError}</p>}
       <form onSubmit={submit}><label className="sr-only" htmlFor="follow-up">Follow-up message</label><textarea id="follow-up" name="message" rows={2} placeholder={task.status === 'stopping' ? 'Task is stopping…' : 'Send a follow-up…'} disabled={sending || task.status === 'stopping'} /><button className="icon-button send" type="submit" aria-label="Send message" disabled={sending || task.status === 'stopping'}><Send /></button></form>
       {active && <button className="button stop" onClick={stop} disabled={task.status === 'stopping'} data-testid="stop-task"><Square size={15} />{task.status === 'stopping' ? 'Stopping…' : 'Stop agent'}</button>}
     </div>

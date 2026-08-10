@@ -76,3 +76,81 @@ test('selects and displays the model for a new conversation', async () => {
   const creation = fetchMock.mock.calls.find(([input, init]) => String(input) === '/api/repositories/repo-1/tasks' && init?.method === 'POST');
   expect(JSON.parse(String(creation?.[1]?.body))).toMatchObject({ prompt: 'Use selected model', modelId: 'gpt-test' });
 });
+
+test('does not apply a previously selected task lifecycle state after switching tasks', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === '/api/repositories/repo-1') return new Response(JSON.stringify({ id: 'repo-1', name: 'Planner', path: '/src/planner' }));
+    if (url === '/api/repositories/repo-1/status') return new Response(JSON.stringify({ branch: 'main', dirty: false, ahead: 0, behind: 0 }));
+    if (url === '/api/repositories/repo-1/models') return new Response(JSON.stringify([]));
+    if (url === '/api/repositories/repo-1/tasks') return new Response(JSON.stringify([
+      { id: 'task-completed', state: 'completed', initialPrompt: 'Finished task', createdAt: '2026-08-07T12:00:00Z' },
+      { id: 'task-running', state: 'running', initialPrompt: 'Current task', createdAt: '2026-08-07T12:01:00Z' },
+    ]));
+    if (url.startsWith('/api/tasks/task-completed/events')) return new Response(JSON.stringify([
+      { sequence: 1, kind: 'lifecycle', createdAt: '2026-08-07T12:00:02Z', payload: { state: 'completed' } },
+    ]));
+    if (url.startsWith('/api/tasks/task-running/events')) return new Response(JSON.stringify([]));
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  history.pushState({}, '', '/repositories/repo-1?task=task-completed');
+  render(<App />);
+
+  await screen.findByTestId('task-task-completed');
+  await userEvent.click(screen.getByTestId('history-task-running'));
+
+  expect(await within(screen.getByTestId('task-task-running')).findByTestId('task-status')).toHaveTextContent('running');
+});
+
+test('keeps the stopping state while a stop request is pending', async () => {
+  let resolveStop!: (response: Response) => void;
+  const stopRequest = new Promise<Response>((resolve) => { resolveStop = resolve; });
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/repositories/repo-1') return new Response(JSON.stringify({ id: 'repo-1', name: 'Planner', path: '/src/planner' }));
+    if (url === '/api/repositories/repo-1/status') return new Response(JSON.stringify({ branch: 'main', dirty: false, ahead: 0, behind: 0 }));
+    if (url === '/api/repositories/repo-1/models') return new Response(JSON.stringify([]));
+    if (url === '/api/repositories/repo-1/tasks') return new Response(JSON.stringify([
+      { id: 'task-running', state: 'running', initialPrompt: 'Current task', createdAt: '2026-08-07T12:00:00Z' },
+    ]));
+    if (url.startsWith('/api/tasks/task-running/events')) return new Response(JSON.stringify([
+      { sequence: 1, kind: 'lifecycle', createdAt: '2026-08-07T12:00:02Z', payload: { state: 'running' } },
+    ]));
+    if (url === '/api/tasks/task-running/stop' && init?.method === 'POST') return stopRequest;
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+
+  await screen.findByTestId('task-timeline');
+  await userEvent.click(screen.getByTestId('stop-task'));
+
+  expect(within(screen.getByTestId('task-task-running')).getByTestId('task-status')).toHaveTextContent('stopping');
+  resolveStop(new Response(JSON.stringify({ id: 'task-running', state: 'stopped', createdAt: '2026-08-07T12:00:00Z' })));
+  expect(await within(screen.getByTestId('task-task-running')).findByTestId('task-status')).toHaveTextContent('stopped');
+});
+
+test('keeps a follow-up draft and reports its error when delivery fails', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/repositories/repo-1') return new Response(JSON.stringify({ id: 'repo-1', name: 'Planner', path: '/src/planner' }));
+    if (url === '/api/repositories/repo-1/status') return new Response(JSON.stringify({ branch: 'main', dirty: false, ahead: 0, behind: 0 }));
+    if (url === '/api/repositories/repo-1/models') return new Response(JSON.stringify([]));
+    if (url === '/api/repositories/repo-1/tasks') return new Response(JSON.stringify([
+      { id: 'task-running', state: 'running', initialPrompt: 'Current task', createdAt: '2026-08-07T12:00:00Z' },
+    ]));
+    if (url.startsWith('/api/tasks/task-running/events')) return new Response(JSON.stringify([]));
+    if (url === '/api/tasks/task-running/messages' && init?.method === 'POST') return new Response('Task turn cannot accept a follow-up', { status: 409 });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+
+  const followUp = await screen.findByLabelText('Follow-up message');
+  await userEvent.type(followUp, 'Please try the focused test again');
+  await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Task turn cannot accept a follow-up');
+  expect(followUp).toHaveValue('Please try the focused test again');
+});
