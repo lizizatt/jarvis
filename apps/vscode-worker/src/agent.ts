@@ -127,7 +127,7 @@ function stableSerialize(value: unknown): string {
 }
 
 export function boundedHistory(history: TurnMessage['history'], maxInputTokens: number, reservedCharacters: number): TurnMessage['history'] {
-	const budget = Math.max(8_000, maxInputTokens * 3 - reservedCharacters - 12_000);
+	const budget = Math.max(0, maxInputTokens * 3 - reservedCharacters - 12_000);
 	const selected: TurnMessage['history'] = [];
 	let characters = 0;
 	for (let index = history.length - 1; index >= 0; index -= 1) {

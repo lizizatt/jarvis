@@ -27,11 +27,9 @@ suite('agent tool rounds', () => {
 suite('boundedHistory', () => {
 	const entry = (content: string) => ({ role: 'user' as const, content });
 
-	test('returns empty array when the only entry exceeds the budget', () => {
-		// With maxInputTokens=100 and reservedCharacters=0, budget = max(8000, 100*3 - 0 - 12000) = max(8000, -11700) = 8000
-		// Use a tiny budget via absurdly small maxInputTokens to force the entry over budget
-		const big = entry('x'.repeat(10_000));
-		const result = boundedHistory([big], 1, 0);
+	test('returns empty array when the only entry exceeds a small model budget', () => {
+		const big = entry('x'.repeat(289));
+		const result = boundedHistory([big], 4_096, 0);
 		assert.deepStrictEqual(result, []);
 	});
 
