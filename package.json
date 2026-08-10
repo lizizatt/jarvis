@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "repo:add": "node tools/register-repository.mjs",
     "test": "npm run test --workspaces --if-present",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build --workspace @jarvis/web && playwright test",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

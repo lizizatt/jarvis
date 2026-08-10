@@ -9,16 +9,6 @@ precacheAndRoute(self.__WB_MANIFEST);
 self.skipWaiting();
 clientsClaim();
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    await Promise.all(windows.map(async (client) => {
-      const url = new URL(client.url);
-      if (url.origin === self.location.origin && url.pathname === '/') await (client as WindowClient).navigate(client.url);
-    }));
-  })());
-});
-
 self.addEventListener('push', (event) => {
   const payload = event.data?.json() as { title?: string; body?: string; url?: string; repositoryId?: string; taskId?: string } | undefined;
   const url = payload?.url ?? (payload?.repositoryId ? `/repositories/${payload.repositoryId}${payload.taskId ? `?task=${payload.taskId}` : ''}` : '/');

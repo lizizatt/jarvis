@@ -415,6 +415,18 @@ describe('server MVP', () => {
     expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/tasks` })).json()).toEqual([]);
   });
 
+  it('advertises auto when CLI or auto mode has no worker models', async () => {
+    for (const agentBackend of ['cli', 'auto'] as const) {
+      const sandbox = await makeSandbox();
+      const config = configuration(sandbox.dataDir);
+      config.agentBackend = agentBackend;
+      const app = await trackedApp(config);
+      const repository = await register(app, sandbox.repository);
+      const models = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/models` })).json();
+      expect(models).toEqual([expect.objectContaining({ id: 'auto', vendor: 'cli', family: 'auto' })]);
+    }
+  });
+
   it('rejects task creation when a connected worker exposes no models', async () => {
     const sandbox = await makeSandbox();
     const config = configuration(sandbox.dataDir);
@@ -423,6 +435,7 @@ describe('server MVP', () => {
     const repository = await register(app, sandbox.repository);
     const address = await app.listen({ host: '127.0.0.1', port: 0 });
     const worker = await connectWorker(address, sandbox.repository, []);
+    expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/models` })).json()).toEqual([]);
     const response = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
       payload: { prompt: 'cannot run' } });
     expect(response.statusCode).toBe(400);

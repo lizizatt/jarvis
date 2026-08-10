@@ -49,7 +49,7 @@ npm test
 npm run build
 ```
 
-The root suite runs server and web Vitest tests plus the worker's VS Code-hosted tests. Worker tests download/use a test VS Code instance and may require a graphical or headless display. Playwright does not start the app: run `npm run dev:web` separately, then `npm run test:e2e`, or set `PLAYWRIGHT_BASE_URL` to an existing deployment.
+The root suite runs server and web Vitest tests plus the worker's VS Code-hosted tests. Worker tests download/use a test VS Code instance and may require a graphical or headless display. `npm run test:e2e` builds the web app and starts an isolated fixture server that uses a local agent fixture, so it does not consume Copilot tokens. To target an external deployment, explicitly set both `PLAYWRIGHT_BASE_URL` and `PLAYWRIGHT_ALLOW_EXTERNAL=true`; those tests create tasks and terminal sessions on that deployment.
 
 Do not pipe validation through `tail` or similar filters when the exit status could be hidden. Report commands you could not run.
 

@@ -83,7 +83,10 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   app.get<{ Params: IdParams }>('/api/repositories/:id/models', async (request, reply) => {
     const repository = store.getRepository(request.params.id);
     if (!repository) return reply.code(404).send({ error: 'Repository not found' });
-    return workers.modelsFor(repository.path);
+    const workerModels = workers.modelsFor(repository.path);
+    if (workerModels.length > 0 || config.agentBackend === 'worker') return workerModels;
+    // CLI / auto-with-no-worker: expose a single auto entry so the UI can submit.
+    return [{ id: 'auto', name: 'Auto', vendor: 'cli', family: 'auto', version: '1', maxInputTokens: 0 }];
   });
 
   app.get<{ Querystring: { repositoryId?: string } }>('/api/tasks', async (request) =>
