@@ -36,6 +36,7 @@ type WireRepositoryStatus = {
 function task(value: WireTask): TaskSummary {
   return { ...value, status: value.status ?? value.state ?? 'ready', title: value.title ?? value.initialPrompt,
     nativeSessionId: value.nativeSessionId ?? (value as WireTask & { sessionId?: string }).sessionId,
+    origin: value.origin ?? 'jarvis-pwa',
     modelId: value.modelId ?? 'auto',
     finishedAt: value.finishedAt ?? value.endedAt ?? undefined };
 }

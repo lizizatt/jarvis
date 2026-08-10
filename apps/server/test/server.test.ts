@@ -31,7 +31,7 @@ describe('server MVP', () => {
     const store = new Store(join(sandbox.dataDir, 'jarvis.sqlite3'));
     const now = new Date().toISOString();
     store.insertRepository({ id: 'repo', name: 'Repo', path: sandbox.repository, defaultBranch: 'main', createdAt: now, updatedAt: now });
-    store.insertTask({ id: 'task', repositoryId: 'repo', sessionId: 'session', state: 'running', createdAt: now,
+    store.insertTask({ id: 'task', repositoryId: 'repo', sessionId: 'session', origin: 'jarvis-pwa', clientConversationId: null, state: 'running', createdAt: now,
       updatedAt: now, stoppedBy: null, stoppedAt: null, exitCode: null, modelId: 'auto' });
     store.close();
 
@@ -363,6 +363,24 @@ describe('server MVP', () => {
       payload: { prompt: 'bad model', modelId: 'not-a-model' } });
     expect(unavailable.statusCode).toBe(400);
     expect(unavailable.json().error).toContain('not available');
+    worker.socket.close();
+  });
+
+  it('persists VS Code Chat task provenance and delivers its opaque key to the worker', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    const worker = await connectWorker(address, sandbox.repository);
+
+    const created = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`, payload: {
+      prompt: 'from chat', origin: 'vscode-chat', clientConversationId: 'chat-key', modelId: 'test-model',
+    } });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ origin: 'vscode-chat', clientConversationId: 'chat-key' });
+    expect(await takeWorkerMessage(worker, 'turn')).toMatchObject({ clientConversationId: 'chat-key', modelId: 'test-model' });
+    worker.socket.send(JSON.stringify({ version: 2, type: 'complete', taskId: created.json().id }));
+    await waitFor(async () => (await taskFrom(app, created.json().id)).state === 'completed');
     worker.socket.close();
   });
 

@@ -19,6 +19,17 @@ interface RunningTurn {
 	toolCancellation: AbortController;
 }
 
+interface NativeChatRoute {
+	response: vscode.ChatResponseStream;
+	resolve: (text: string) => void;
+	reject: (error: Error) => void;
+}
+
+interface ChatTaskMetadata {
+	taskId: string;
+	clientConversationId: string;
+}
+
 export class WorkerClient implements vscode.Disposable {
 	private readonly instanceWorkerId = randomUUID();
 	private socket: WebSocket | undefined;
@@ -27,6 +38,7 @@ export class WorkerClient implements vscode.Disposable {
 	private models: vscode.LanguageModelChat[] = [];
 	private workspaceRoots: string[] = [];
 	private readonly runningTurns = new Map<string, RunningTurn>();
+	private readonly nativeChatRoutes = new Map<string, NativeChatRoute>();
 	private disposed = false;
 
 	constructor(private readonly context: vscode.ExtensionContext) {}
@@ -92,6 +104,48 @@ export class WorkerClient implements vscode.Disposable {
 			+ `${this.runningTurns.size} active turn(s).`;
 	}
 
+	async handleChatRequest(request: vscode.ChatRequest, context: vscode.ChatContext,
+		response: vscode.ChatResponseStream, token: vscode.CancellationToken): Promise<vscode.ChatResult> {
+		if (this.socket?.readyState !== WebSocket.OPEN) {
+			response.markdown('Jarvis is not connected. Run **Jarvis: Connect Copilot Worker** and try again.');
+			return {};
+		}
+		const repository = await this.openRepository();
+		if (!repository) {
+			response.markdown('Jarvis needs exactly one open repository that is registered in Jarvis.');
+			return {};
+		}
+
+		const prior = chatTaskMetadata(context);
+		const clientConversationId = prior?.clientConversationId ?? randomUUID();
+		const completion = new Promise<string>((resolve, reject) => {
+			this.nativeChatRoutes.set(clientConversationId, { response, resolve, reject });
+		});
+		let taskId: string | undefined;
+		const cancellation = token.onCancellationRequested(() => {
+			this.nativeChatRoutes.get(clientConversationId)?.reject(new vscode.CancellationError());
+			this.nativeChatRoutes.delete(clientConversationId);
+			if (taskId) { void this.stopChatTask(taskId); }
+		});
+		try {
+			const task = prior
+				? await this.postJson<{ id: string }>(`/api/tasks/${encodeURIComponent(prior.taskId)}/messages`, { prompt: request.prompt })
+				: await this.postJson<{ id: string }>(`/api/repositories/${encodeURIComponent(repository.id)}/tasks`, {
+					prompt: request.prompt, modelId: request.model.id, origin: 'vscode-chat', clientConversationId,
+				});
+			taskId = task.id;
+			await completion;
+			return { metadata: { jarvisTaskId: taskId, jarvisClientConversationId: clientConversationId } };
+		} catch (error) {
+			this.nativeChatRoutes.delete(clientConversationId);
+			if (token.isCancellationRequested) { return {}; }
+			response.markdown(`Jarvis could not start this task: ${errorMessage(error)}`);
+			return {};
+		} finally {
+			cancellation.dispose();
+		}
+	}
+
 	dispose(): void {
 		this.disposed = true;
 		this.clearReconnect();
@@ -102,6 +156,8 @@ export class WorkerClient implements vscode.Disposable {
 			running.modelCancellation.dispose();
 		}
 		this.runningTurns.clear();
+		for (const route of this.nativeChatRoutes.values()) { route.reject(new Error('Jarvis worker was disposed')); }
+		this.nativeChatRoutes.clear();
 	}
 
 	private openSocket(): void {
@@ -173,6 +229,7 @@ export class WorkerClient implements vscode.Disposable {
 		}
 		const modelCancellation = new vscode.CancellationTokenSource();
 		const toolCancellation = new AbortController();
+		const nativeRoute = turn.clientConversationId ? this.nativeChatRoutes.get(turn.clientConversationId) : undefined;
 		this.runningTurns.set(turn.taskId, { modelCancellation, toolCancellation });
 		try {
 			const repositoryPath = await canonicalPath(turn.repositoryPath);
@@ -189,19 +246,64 @@ export class WorkerClient implements vscode.Disposable {
 			const text = await runAgentTurn(model, turn, {
 				token: modelCancellation.token,
 				signal: toolCancellation.signal,
-			}, { emit: (kind, payload) => this.sendEvent(turn.taskId, kind, payload) });
+			}, { emit: (kind, payload) => {
+				this.sendEvent(turn.taskId, kind, payload);
+				if (kind === 'text' && nativeRoute) {
+					const text = record(payload).text;
+					if (typeof text === 'string') { nativeRoute.response.markdown(text); }
+				}
+			} });
 			this.sendTerminal({ type: 'complete', version: WORKER_PROTOCOL_VERSION, taskId: turn.taskId, payload: { text } });
+				nativeRoute?.resolve(text);
 		} catch (error) {
+				const message = errorMessage(error);
 			if (modelCancellation.token.isCancellationRequested || toolCancellation.signal.aborted) {
 				this.sendTerminal({ type: 'stopped', version: WORKER_PROTOCOL_VERSION, taskId: turn.taskId });
 			} else {
-				this.sendTerminal({ type: 'failed', version: WORKER_PROTOCOL_VERSION, taskId: turn.taskId, payload: { error: errorMessage(error) } });
+					this.sendTerminal({ type: 'failed', version: WORKER_PROTOCOL_VERSION, taskId: turn.taskId, payload: { error: message } });
 			}
+				nativeRoute?.reject(new Error(message));
 		} finally {
 			this.runningTurns.delete(turn.taskId);
 			modelCancellation.dispose();
+			if (turn.clientConversationId) { this.nativeChatRoutes.delete(turn.clientConversationId); }
 		}
 	}
+
+		private async openRepository(): Promise<{ id: string } | undefined> {
+			if (this.workspaceRoots.length !== 1) { return undefined; }
+			const repositories = await this.getJson<Array<{ id: string; path: string }>>('/api/repositories');
+			return repositories.find(repository => repository.path === this.workspaceRoots[0]);
+		}
+
+		private async stopChatTask(taskId: string): Promise<void> {
+			try { await this.postJson(`/api/tasks/${encodeURIComponent(taskId)}/stop`, { confirmed: true, stoppedBy: 'vscode-chat' }); }
+			catch { }
+		}
+
+		private async getJson<T>(path: string): Promise<T> {
+			const response = await fetch(this.apiUrl(path));
+			if (!response.ok) { throw new Error(await response.text() || `Jarvis returned ${response.status}`); }
+			return response.json() as Promise<T>;
+		}
+
+		private async postJson<T>(path: string, body: unknown): Promise<T> {
+			const response = await fetch(this.apiUrl(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+			if (!response.ok) { throw new Error(await response.text() || `Jarvis returned ${response.status}`); }
+			return response.json() as Promise<T>;
+		}
+
+		private apiUrl(path: string): string {
+			const serverUrl = vscode.workspace.getConfiguration('jarvisCopilotWorker').get<string>(
+				'serverUrl', 'ws://127.0.0.1:3210/ws/workers',
+			);
+			const base = new URL(serverUrl);
+			base.protocol = base.protocol === 'wss:' ? 'https:' : 'http:';
+			base.pathname = '/';
+			base.search = '';
+			base.hash = '';
+			return new URL(path, base).toString();
+		}
 
 	private sendHello(): void {
 		this.send({
@@ -309,6 +411,21 @@ async function canonicalPath(candidate: string): Promise<string | undefined> {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function chatTaskMetadata(context: vscode.ChatContext): ChatTaskMetadata | undefined {
+	for (const turn of [...context.history].reverse()) {
+		if (!(turn instanceof vscode.ChatResponseTurn)) { continue; }
+		const metadata = record(turn.result.metadata);
+		if (typeof metadata.jarvisTaskId === 'string' && typeof metadata.jarvisClientConversationId === 'string') {
+			return { taskId: metadata.jarvisTaskId, clientConversationId: metadata.jarvisClientConversationId };
+		}
+	}
+	return undefined;
+}
+
+function record(value: unknown): Record<string, unknown> {
+	return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
 }
 
 function throwIfCancelled(model: vscode.CancellationTokenSource, tools: AbortController): void {

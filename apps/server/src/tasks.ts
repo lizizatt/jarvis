@@ -28,11 +28,12 @@ export class TaskManager {
     private readonly push: PushService, private readonly config: ServerConfig,
     private readonly workers?: WorkerManager) {}
 
-  create(repository: Repository, prompt: string, modelId = 'auto'): Task {
+  create(repository: Repository, prompt: string, modelId = 'auto',
+    provenance: Pick<Task, 'origin' | 'clientConversationId'> = { origin: 'jarvis-pwa', clientConversationId: null }): Task {
     this.assertBackendAvailable(repository);
     this.assertModelAvailable(repository, modelId);
     const now = new Date().toISOString();
-    const task: Task = { id: randomUUID(), repositoryId: repository.id, sessionId: randomUUID(), state: 'starting',
+    const task: Task = { id: randomUUID(), repositoryId: repository.id, sessionId: randomUUID(), ...provenance, state: 'starting',
       createdAt: now, updatedAt: now, stoppedBy: null, stoppedAt: null, exitCode: null, modelId };
     this.store.insertTask(task);
     this.emit(task.id, 'user_message', { text: prompt });

@@ -30,6 +30,7 @@ export interface TurnMessage {
 	sessionId: string;
 	repositoryPath: string;
 	modelId: string;
+	clientConversationId?: string;
 	policy: string;
 	prompt: string;
 	history: TurnHistoryEntry[];
@@ -114,6 +115,7 @@ export function parseServerMessage(raw: string): ServerMessage {
 			sessionId: requiredString(value, 'sessionId'),
 			repositoryPath: requiredString(value, 'repositoryPath'),
 			modelId: requiredString(value, 'modelId'),
+			clientConversationId: optionalString(value, 'clientConversationId'),
 			policy: requiredString(value, 'policy', true),
 			prompt: requiredString(value, 'prompt'),
 			history: value.history,
@@ -129,6 +131,11 @@ function requiredString(value: Record<string, unknown>, key: string, allowEmpty 
 		throw new Error(`Worker message field ${key} must be a string`);
 	}
 	return field;
+}
+
+function optionalString(value: Record<string, unknown>, key: string): string | undefined {
+	if (value[key] === undefined) { return undefined; }
+	return requiredString(value, key);
 }
 
 function isHistoryEntry(value: unknown): value is TurnHistoryEntry {

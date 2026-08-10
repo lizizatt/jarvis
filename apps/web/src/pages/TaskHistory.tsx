@@ -31,7 +31,7 @@ export function TaskHistory() {
     {!tasks.loading && !tasks.error && !tasks.data?.length && <div className="empty"><h2>No conversations yet</h2></div>}
     <section className="history-list" aria-label="Past conversations">
       {tasks.data?.map((task) => <article className="history-row" key={task.id} data-testid={`history-row-${task.id}`}>
-        <div className="history-main"><strong>{task.title ?? 'Developer task'}</strong><div className="history-meta"><TaskStatusBadge status={task.status} /><time dateTime={task.createdAt}>{elapsed(task.createdAt)} ago</time></div></div>
+        <div className="history-main"><strong>{task.title ?? 'Developer task'}</strong><div className="history-meta"><TaskStatusBadge status={task.status} /><span className="session-id">{task.origin === 'vscode-chat' ? 'VS Code Chat' : 'Jarvis'}</span><time dateTime={task.createdAt}>{elapsed(task.createdAt)} ago</time></div></div>
         <button className="icon-button" aria-label={`Delete conversation ${task.title ?? task.id}`} aria-busy={deletingId === task.id} disabled={ACTIVE_STATES.includes(task.status) || deletingId !== undefined} onClick={() => void remove(task)} data-testid={`delete-${task.id}`}><Trash2 /></button>
       </article>)}
     </section>

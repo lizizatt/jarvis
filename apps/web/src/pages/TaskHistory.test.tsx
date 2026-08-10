@@ -15,7 +15,7 @@ test('lists conversations, blocks deleting active ones, and deletes finished one
     if (url === '/api/repositories/repo-1') return new Response(JSON.stringify({ id: 'repo-1', name: 'Planner', path: '/src/planner', defaultBranch: 'main' }));
     if (url === '/api/repositories/repo-1/tasks') return new Response(JSON.stringify([
       { id: 'task-active', repositoryId: 'repo-1', state: 'running', initialPrompt: 'Still working', createdAt: '2026-08-07T12:00:00Z' },
-      { id: 'task-done', repositoryId: 'repo-1', state: 'completed', initialPrompt: 'Finished conversation', createdAt: '2026-08-06T12:00:00Z' },
+      { id: 'task-done', repositoryId: 'repo-1', state: 'completed', origin: 'vscode-chat', initialPrompt: 'Finished conversation', createdAt: '2026-08-06T12:00:00Z' },
     ]));
     if (url === '/api/tasks/task-done' && init?.method === 'DELETE') return new Response(null, { status: 204 });
     throw new Error(`Unexpected request: ${url}`);
@@ -28,6 +28,7 @@ test('lists conversations, blocks deleting active ones, and deletes finished one
   expect(within(activeRow).getByTestId('delete-task-active')).toBeDisabled();
 
   const doneRow = screen.getByTestId('history-row-task-done');
+  expect(within(doneRow).getByText('VS Code Chat')).toBeVisible();
   await userEvent.click(within(doneRow).getByTestId('delete-task-done'));
   const deleteCall = fetchMock.mock.calls.find(([url, init]) => url === '/api/tasks/task-done' && init?.method === 'DELETE');
   expect(deleteCall).toBeDefined();

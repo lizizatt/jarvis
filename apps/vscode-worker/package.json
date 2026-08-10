@@ -33,6 +33,15 @@
         "title": "Jarvis: Run Copilot Capability Test"
       }
     ],
+    "chatParticipants": [
+      {
+        "id": "jarvis-copilot-worker.jarvis",
+        "name": "jarvis",
+        "fullName": "Jarvis",
+        "description": "Work on the open repository with Jarvis",
+        "isSticky": true
+      }
+    ],
     "configuration": {
       "title": "Jarvis Copilot Worker",
       "properties": {

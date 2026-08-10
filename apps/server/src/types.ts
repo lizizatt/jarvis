@@ -9,10 +9,14 @@ export interface Repository {
   updatedAt: string;
 }
 
+export type TaskOrigin = 'jarvis-pwa' | 'vscode-chat';
+
 export interface Task {
   id: string;
   repositoryId: string;
   sessionId: string;
+  origin: TaskOrigin;
+  clientConversationId: string | null;
   state: TaskState;
   createdAt: string;
   updatedAt: string;

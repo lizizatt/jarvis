@@ -3,8 +3,11 @@ import { runCapabilityTest, WorkerClient } from './worker';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	const worker = new WorkerClient(context);
+	const chatParticipant = vscode.chat.createChatParticipant('jarvis-copilot-worker.jarvis',
+		(request, chatContext, response, token) => worker.handleChatRequest(request, chatContext, response, token));
 	context.subscriptions.push(
 		worker,
+		chatParticipant,
 		vscode.commands.registerCommand('jarvisCopilotWorker.connect', async () => {
 			try {
 				await worker.connectFromUserAction();

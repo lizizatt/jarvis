@@ -14,7 +14,7 @@ import { ensureLanding, readPreviewFile, rewritePreviewHtml } from './previews.j
 import { PushService } from './push.js';
 import { TaskManager } from './tasks.js';
 import { TerminalManager } from './terminals.js';
-import { ACTIVE_TASK_STATES, type Repository, type ServerConfig } from './types.js';
+import { ACTIVE_TASK_STATES, type Repository, type ServerConfig, type TaskOrigin } from './types.js';
 import { WorkerManager } from './workers.js';
 
 interface IdParams { id: string }
@@ -95,11 +95,15 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     if (!store.getRepository(request.params.id)) return reply.code(404).send({ error: 'Repository not found' });
     return store.listTasks(request.params.id).map((task) => taskSummary(store, task));
   });
-  app.post<{ Params: IdParams; Body: { prompt?: string; modelId?: string } }>('/api/repositories/:id/tasks', async (request, reply) => {
+  app.post<{ Params: IdParams; Body: { prompt?: string; modelId?: string; origin?: TaskOrigin; clientConversationId?: string } }>('/api/repositories/:id/tasks', async (request, reply) => {
     const repository = store.getRepository(request.params.id);
     if (!repository) return reply.code(404).send({ error: 'Repository not found' });
     if (!request.body?.prompt?.trim()) return reply.code(400).send({ error: 'prompt is required' });
-    try { return reply.code(201).send(taskSummary(store, tasks.create(repository, request.body.prompt, request.body.modelId?.trim() || 'auto'))); }
+    const origin = request.body.origin === 'vscode-chat' ? 'vscode-chat' : 'jarvis-pwa';
+    const clientConversationId = origin === 'vscode-chat' && request.body.clientConversationId?.trim()
+      ? request.body.clientConversationId.trim() : null;
+    try { return reply.code(201).send(taskSummary(store, tasks.create(repository, request.body.prompt,
+      request.body.modelId?.trim() || 'auto', { origin, clientConversationId }))); }
     catch (error) { return sendKnownError(reply, error); }
   });
   app.get<{ Params: IdParams }>('/api/tasks/:id', async (request, reply) => {

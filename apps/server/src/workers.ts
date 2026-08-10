@@ -118,7 +118,7 @@ export class WorkerManager {
     try {
       worker.socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'turn', taskId: task.id,
         sessionId: task.sessionId, repositoryPath: repository.path, modelId: task.modelId,
-        policy, prompt, history: modelHistory(history, prompt) }));
+        clientConversationId: task.clientConversationId ?? undefined, policy, prompt, history: modelHistory(history, prompt) }));
     } catch {
       this.release(worker, task.id);
       return undefined;

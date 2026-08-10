@@ -3,6 +3,7 @@ export type TaskStatus = 'ready' | 'queued' | 'starting' | 'running' | 'stopping
 export interface TaskSummary {
   id: string;
   status: TaskStatus;
+  origin: 'jarvis-pwa' | 'vscode-chat';
   title?: string;
   latestAction?: string;
   createdAt: string;

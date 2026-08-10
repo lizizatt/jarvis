@@ -4,11 +4,12 @@ import { parseServerMessage } from '../protocol';
 suite('worker protocol', () => {
 	test('parses version-two turn and cancel messages', () => {
 		const turn = parseServerMessage(JSON.stringify({
-			version: 2, type: 'turn', taskId: 'task', sessionId: 'session', repositoryPath: '/repo', modelId: 'auto',
+			version: 2, type: 'turn', taskId: 'task', sessionId: 'session', repositoryPath: '/repo', modelId: 'auto', clientConversationId: 'chat-key',
 			policy: '', prompt: 'Fix it', history: [{ role: 'user', content: 'Earlier' }],
 		}));
 		assert.strictEqual(turn.type, 'turn');
 		assert.strictEqual(turn.taskId, 'task');
+		assert.strictEqual(turn.clientConversationId, 'chat-key');
 		assert.deepStrictEqual(parseServerMessage('{"version":2,"type":"cancel","taskId":"task"}'), {
 			version: 2, type: 'cancel', taskId: 'task',
 		});
