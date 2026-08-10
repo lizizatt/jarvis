@@ -10,12 +10,21 @@ export function TaskPanel({ task: initialTask, onTaskChange }: { task: TaskSumma
   const [task, setTask] = useState(initialTask);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
-  const events = useTaskStream(task.id);
+  const { events, initialHistoryLoaded } = useTaskStream(task.id);
   const topRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const positionedTaskId = useRef<string | undefined>(undefined);
   const lastLifecycle = useRef<{ taskId: string; sequence: number } | undefined>(undefined);
   useEffect(() => { setTask(initialTask); }, [initialTask]);
-  useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' }); }, [events.length]);
+  useEffect(() => {
+    if (!initialHistoryLoaded) return;
+    if (positionedTaskId.current !== task.id) {
+      positionedTaskId.current = task.id;
+      topRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
+  }, [events.length, initialHistoryLoaded, task.id]);
   useEffect(() => {
     const lifecycle = [...events].reverse().find((event) => event.type === 'task_state') as (typeof events[number] & { state?: TaskSummary['status'] }) | undefined;
     const previous = lastLifecycle.current;

@@ -35,21 +35,21 @@ export function mergeOrdered(current: TaskEvent[], incoming: TaskEvent[]) {
 }
 
 export function useTaskStream(taskId?: string) {
-  const [stream, setStream] = useState({ taskId, events: [] as TaskEvent[] });
+  const [stream, setStream] = useState({ taskId, events: [] as TaskEvent[], initialHistoryLoaded: !taskId });
   const lastSequence = useRef(0);
   useEffect(() => {
-    if (!taskId) { setStream({ taskId, events: [] }); return; }
+    if (!taskId) { setStream({ taskId, events: [], initialHistoryLoaded: true }); return; }
     const activeTaskId = taskId;
     let active = true;
     async function replay(after = lastSequence.current) {
       const next = await api.events(activeTaskId, after);
       if (!active) return;
       setStream((current) => current.taskId === activeTaskId
-        ? { taskId: activeTaskId, events: mergeOrdered(current.events, next) }
+        ? { taskId: activeTaskId, events: mergeOrdered(current.events, next), initialHistoryLoaded: current.initialHistoryLoaded || after === 0 }
         : current);
       lastSequence.current = Math.max(lastSequence.current, ...next.map((event) => event.sequence), 0);
     }
-    setStream({ taskId: activeTaskId, events: [] }); lastSequence.current = 0; void replay(0);
+    setStream({ taskId: activeTaskId, events: [], initialHistoryLoaded: false }); lastSequence.current = 0; void replay(0);
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     let socket: WebSocket | undefined;
     let reconnectTimer: number | undefined;
@@ -66,7 +66,7 @@ export function useTaskStream(taskId?: string) {
           if (event.sequence > lastSequence.current + 1) { void replay(lastSequence.current); return; }
           lastSequence.current = Math.max(lastSequence.current, event.sequence);
           setStream((current) => current.taskId === activeTaskId
-            ? { taskId: activeTaskId, events: mergeOrdered(current.events, [event]) }
+            ? { taskId: activeTaskId, events: mergeOrdered(current.events, [event]), initialHistoryLoaded: current.initialHistoryLoaded }
             : current);
         } catch { void replay(lastSequence.current); }
       });
@@ -77,5 +77,5 @@ export function useTaskStream(taskId?: string) {
     connect();
     return () => { active = false; if (reconnectTimer) window.clearTimeout(reconnectTimer); socket?.close?.(); };
   }, [taskId]);
-  return stream.taskId === taskId ? stream.events : [];
+  return stream.taskId === taskId ? stream : { taskId, events: [] as TaskEvent[], initialHistoryLoaded: false };
 }
