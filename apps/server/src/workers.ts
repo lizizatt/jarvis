@@ -220,9 +220,15 @@ function recordPayload(value: unknown): Record<string, unknown> {
 }
 function modelHistory(events: TaskEvent[], currentPrompt: string): Array<{ role: 'user' | 'assistant'; content: string }> {
   const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  for (const event of events) {
+  const currentPromptIndex = events.findLastIndex((event) => {
     const payload = recordPayload(event.payload);
-    if (event.kind === 'user_message' && typeof payload.text === 'string') appendHistory(history, 'user', payload.text);
+    return event.kind === 'user_message' && payload.text === currentPrompt;
+  });
+  for (const [index, event] of events.entries()) {
+    const payload = recordPayload(event.payload);
+    if (index !== currentPromptIndex && event.kind === 'user_message' && typeof payload.text === 'string') {
+      appendHistory(history, 'user', payload.text);
+    }
     if (event.kind === 'agent_event' && payload.type === 'text' && typeof payload.text === 'string') {
       appendHistory(history, 'assistant', payload.text);
     }
@@ -230,16 +236,10 @@ function modelHistory(events: TaskEvent[], currentPrompt: string): Array<{ role:
       appendHistory(history, 'assistant', `Question for the user: ${payload.prompt}`);
     }
   }
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    if (history[index].role === 'user' && history[index].content === currentPrompt) {
-      history.splice(index, 1);
-      break;
-    }
-  }
   return history;
 }
 function appendHistory(history: Array<{ role: 'user' | 'assistant'; content: string }>, role: 'user' | 'assistant', content: string): void {
   const last = history[history.length - 1];
-  if (role === 'assistant' && last?.role === role) last.content += content;
+  if (last?.role === role) last.content += role === 'user' ? `\n\n${content}` : content;
   else history.push({ role, content });
 }
