@@ -41,11 +41,19 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     vapidPublicKey: push.publicKey, terminalPersistence: 'node-pty-detached-host' }));
   app.get('/api/workers', async () => workers.list());
 
-  app.get('/api/repositories', async () => store.listRepositories().map((repository) => {
-    const activeTask = store.listTasks(repository.id).find((task) => ACTIVE_TASK_STATES.includes(task.state));
-    return { ...repository, previewUrl: `/previews/${repository.id}`,
-      activeTask: activeTask ? taskSummary(store, activeTask) : null };
-  }));
+  app.get('/api/repositories', async () => {
+    const activeTasks = store.listAllActiveTasks();
+    const activeTasksByRepository = new Map<string, import('./types.js').Task>();
+    for (const task of activeTasks) {
+      if (!activeTasksByRepository.has(task.repositoryId)) activeTasksByRepository.set(task.repositoryId, task);
+    }
+    const eventsByTaskId = store.listEventsForTasks(activeTasks.map((task) => task.id));
+    return store.listRepositories().map((repository) => {
+      const activeTask = activeTasksByRepository.get(repository.id);
+      return { ...repository, previewUrl: `/previews/${repository.id}`,
+        activeTask: activeTask ? taskSummary(store, activeTask, eventsByTaskId.get(activeTask.id)) : null };
+    });
+  });
   app.post<{ Body: { name?: string; path?: string; defaultBranch?: string | null } }>('/api/repositories', async (request, reply) => {
     if (!request.body?.name?.trim() || !request.body.path) return reply.code(400).send({ error: 'name and path are required' });
     try {
@@ -209,8 +217,8 @@ function sendKnownError(reply: FastifyReply, error: unknown): unknown {
   return reply.code(status).send({ error: known.message || 'Request failed' });
 }
 
-function taskSummary(store: Store, task: import('./types.js').Task): import('./types.js').Task & { title?: string; latestAction?: string } {
-  const events = store.listEvents(task.id);
+function taskSummary(store: Store, task: import('./types.js').Task, loadedEvents?: import('./types.js').TaskEvent[]): import('./types.js').Task & { title?: string; latestAction?: string } {
+  const events = loadedEvents ?? store.listEvents(task.id);
   const firstMessage = events.find((event) => event.kind === 'user_message');
   const latestAction = [...events].reverse().map(eventAction).find(Boolean);
   return { ...task, title: eventText(firstMessage?.payload), latestAction };

@@ -143,6 +143,12 @@ export class Store {
     return (rows as TaskRow[]).map(mapTask);
   }
 
+  listAllActiveTasks(): Task[] {
+    const placeholders = ACTIVE_TASK_STATES.map(() => '?').join(',');
+    return (this.db.prepare(`SELECT * FROM tasks WHERE state IN (${placeholders}) ORDER BY created_at DESC`)
+      .all(...ACTIVE_TASK_STATES) as TaskRow[]).map(mapTask);
+  }
+
   setTaskState(id: string, state: TaskState, extra: { stoppedBy?: string; exitCode?: number | null } = {}): Task | undefined {
     const now = new Date().toISOString();
     // Transitioning back to an active state clears stale stop fields from a prior stop
@@ -183,6 +189,19 @@ export class Store {
     return (this.db.prepare('SELECT * FROM task_events WHERE task_id = ? AND sequence > ? ORDER BY sequence')
       .all(taskId, after) as EventRow[]).map((row) => ({ id: row.id, taskId: row.task_id,
       sequence: row.sequence, kind: row.kind, payload: JSON.parse(row.payload) as unknown, createdAt: row.created_at }));
+  }
+
+  listEventsForTasks(taskIds: string[]): Map<string, TaskEvent[]> {
+    const eventsByTaskId = new Map(taskIds.map((taskId) => [taskId, [] as TaskEvent[]]));
+    if (taskIds.length === 0) return eventsByTaskId;
+    const placeholders = taskIds.map(() => '?').join(',');
+    const rows = this.db.prepare(`SELECT * FROM task_events WHERE task_id IN (${placeholders}) ORDER BY task_id, sequence`)
+      .all(...taskIds) as EventRow[];
+    for (const row of rows) {
+      eventsByTaskId.get(row.task_id)!.push({ id: row.id, taskId: row.task_id, sequence: row.sequence,
+        kind: row.kind, payload: JSON.parse(row.payload) as unknown, createdAt: row.created_at });
+    }
+    return eventsByTaskId;
   }
 
   getSetting(key: string): string | undefined {

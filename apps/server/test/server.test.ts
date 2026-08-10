@@ -226,6 +226,26 @@ describe('server MVP', () => {
     });
   });
 
+  it('batches active task and event loading for repository summaries', async () => {
+    const sandbox = await makeSandbox();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`, payload: { prompt: 'HANG dashboard batch' } });
+    await waitFor(async () => (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/tasks` })).json()[0]?.state === 'running');
+
+    const listTasks = Store.prototype.listTasks;
+    const listEvents = Store.prototype.listEvents;
+    Store.prototype.listTasks = () => { throw new Error('Repository summaries must batch task loading'); };
+    Store.prototype.listEvents = () => { throw new Error('Repository summaries must batch event loading'); };
+    try {
+      const summary = (await app.inject({ method: 'GET', url: '/api/repositories' })).json()[0].activeTask;
+      expect(summary).toMatchObject({ id: expect.any(String), title: 'HANG dashboard batch' });
+    } finally {
+      Store.prototype.listTasks = listTasks;
+      Store.prototype.listEvents = listEvents;
+    }
+  });
+
   it('retains initial prompt titles in task history without false question events', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));
