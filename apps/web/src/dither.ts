@@ -1,6 +1,5 @@
-// Ordered-dither (Bayer 4x4) sparkline texture, adapted from the dither-kit visual
-// language (see docs/design/dither-kit-feasibility/README.md) as a static single-hue
-// paint with no animation, canvas contexts, or extra dependencies.
+// Ordered-dither (Bayer 4x4) sparkline texture with static single-hue paint,
+// no animation, canvas contexts, or extra dependencies.
 const BAYER = [
   [0, 8, 2, 10],
   [12, 4, 14, 6],

@@ -164,22 +164,4 @@ Review every core pane at 390 by 844 CSS pixels and at a wider desktop viewport.
 
 ## Existing References
 
-- [Selected hybrid screen set](dither-kit-feasibility/hybrid-screens-overview.png)
-- [Editable hybrid prototype](dither-kit-feasibility/hybrid-screens.html)
-- [Dither Kit feasibility study](dither-kit-feasibility/README.md)
-
-The existing hybrid is a directional reference, not a pixel-perfect specification. In particular, its solid gold approval and selected-segment fills are superseded by this document.
-
-## Independent Interpretation Test
-
-A fresh implementation subagent received this document as its sole visual authority and produced two phone-scale samples without copying the earlier prototype CSS:
-
-![Independent Agent and Changes interpretations](intent-validation/overview.png)
-
-- [Agent approval screen](intent-validation/agent-screen.png)
-- [Changes review screen](intent-validation/changes-screen.png)
-- [Editable validation source](intent-validation/intent-validation.html)
-
-The interpretation preserved the graphite shell, large red/gold sigil, restrained gold selection, dark outlined affirmative controls, outlined crimson destructive actions, conventional diff colors, and operational density. Both screens render at 390 by 844 CSS pixels without content overflow, and neither uses a solid-gold or solid-red control. The oversized environmental sigil is deliberately clipped by the phone frame.
-
-The test left the exact humanist font and precise sigil geometry/masking strength open. These are intentional implementation choices provided they satisfy the principles and review checklist above.
+This document is the visual authority for the implemented interface. Review changes against its governing principles and checklist rather than against historical prototypes.
