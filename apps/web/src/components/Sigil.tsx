@@ -16,12 +16,22 @@ import {
   motionFromRelativeAngles,
   orientationToQuaternion,
   relativeQuaternion,
+  relativeQuaternionToWindowAngles,
   unwrapAngleRadians,
   type Quaternion
 } from '../virtualWindowMotion';
 import { createVirtualWindowRenderer } from '../virtualWindowRenderer';
 
 const STARMAP_URL = '/media/starmap_2020_4k.png';
+
+function readHorizonDebugFlag() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('horizonDebug') === '1';
+  } catch {
+    return false;
+  }
+}
 
 export function AmbientSigil() {
   const backgroundRef = useRef<HTMLDivElement>(null);
@@ -50,11 +60,15 @@ export function AmbientSigil() {
     let referenceAngles: { pitch: number; yaw: number } | null = null;
     let unwrappedPitch = 0;
     let unwrappedYaw = 0;
+    let currentRoll = 0;
+    let targetRoll = 0;
+
+    renderer?.setHorizonDebug(readHorizonDebugFlag());
 
     function drawScene(time = 0) {
       // Stars and sigils share spherical UV coordinates, so both remain behind
       // the window and track the same full-surround view.
-      renderer?.setView(currentPan.x, currentPan.y, reducedMotion ? 0 : time / 1000);
+      renderer?.setView(currentPan.x, currentPan.y, reducedMotion ? 0 : time / 1000, currentRoll);
     }
 
     function screenOrientationAngle() {
@@ -80,9 +94,11 @@ export function AmbientSigil() {
         target.y = 0;
         targetPan.x = 0;
         targetPan.y = 0;
+        targetRoll = 0;
       } else {
         const relative = relativeQuaternion(referenceQuaternion, currentQuaternion);
         const angles = anglesFromRelativeQuaternion(relative);
+        const windowAngles = relativeQuaternionToWindowAngles(relative);
 
         if (!referenceAngles) {
           referenceAngles = { pitch: 0, yaw: 0 };
@@ -104,6 +120,7 @@ export function AmbientSigil() {
 
         targetPan.x = relativeUnwrapped.yaw;
         targetPan.y = clamp(relativeUnwrapped.pitch, -Math.PI / 2, Math.PI / 2);
+        targetRoll = windowAngles.roll;
       }
       lastSensorUpdate = performance.now();
     }
@@ -152,6 +169,7 @@ export function AmbientSigil() {
         unwrappedYaw = 0;
         target.x = 0;
         target.y = 0;
+        targetRoll = 0;
       }).catch(() => undefined);
     };
 
@@ -168,6 +186,7 @@ export function AmbientSigil() {
         target.y = 0;
         targetPan.x = 0;
         targetPan.y = 0;
+        targetRoll = 0;
         referenceQuaternion = null;
         referenceAngles = null;
         unwrappedPitch = 0;
@@ -207,6 +226,7 @@ export function AmbientSigil() {
       current.y += (target.y - current.y) * blend;
       currentPan.x += (targetPan.x - currentPan.x) * blend;
       currentPan.y += (targetPan.y - currentPan.y) * blend;
+      currentRoll += (targetRoll - currentRoll) * blend;
       if (time - lastDrawTime >= frameInterval) {
         lastDrawTime = time;
         drawScene(time);

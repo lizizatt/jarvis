@@ -1,5 +1,6 @@
 export type VirtualWindowRenderer = {
-  setView(yaw: number, pitch: number, timeSeconds?: number): void;
+  setView(yaw: number, pitch: number, timeSeconds?: number, roll?: number): void;
+  setHorizonDebug(enabled: boolean): void;
   resize(): void;
   dispose(): void;
 };
@@ -19,9 +20,10 @@ precision mediump float;
 varying vec2 screenPosition;
 uniform sampler2D panorama;
 uniform vec2 viewport;
-uniform vec2 viewAngles;
+uniform vec3 viewAngles;
 uniform float elapsedTime;
 uniform vec2 renderTuning;
+uniform float horizonDebug;
 
 float lineSegment(vec2 point, vec2 start, vec2 end, float width) {
   vec2 segment = end - start;
@@ -257,6 +259,10 @@ void main() {
     -1.0
   ));
 
+  float rollCos = cos(viewAngles.z);
+  float rollSin = sin(viewAngles.z);
+  ray = vec3(ray.x * rollCos - ray.y * rollSin, ray.x * rollSin + ray.y * rollCos, ray.z);
+
   float pitchCos = cos(viewAngles.y);
   float pitchSin = sin(viewAngles.y);
   ray = vec3(ray.x, ray.y * pitchCos - ray.z * pitchSin, ray.y * pitchSin + ray.z * pitchCos);
@@ -264,6 +270,14 @@ void main() {
   float yawCos = cos(viewAngles.x);
   float yawSin = sin(viewAngles.x);
   ray = vec3(ray.x * yawCos - ray.z * yawSin, ray.y, ray.x * yawSin + ray.z * yawCos);
+
+  if (horizonDebug > 0.5) {
+    float line = 1.0 - smoothstep(0.0, 0.01, abs(ray.y));
+    float base = ray.y >= 0.0 ? 1.0 : 0.0;
+    float shade = mix(base, 1.0, line);
+    gl_FragColor = vec4(vec3(shade), 1.0);
+    return;
+  }
 
   vec2 uv = vec2(
     atan(ray.x, -ray.z) / (2.0 * 3.14159265359) + 0.5,
@@ -377,11 +391,14 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   const viewLocation = gl.getUniformLocation(program, 'viewAngles');
   const timeLocation = gl.getUniformLocation(program, 'elapsedTime');
   const renderTuningLocation = gl.getUniformLocation(program, 'renderTuning');
+  const horizonDebugLocation = gl.getUniformLocation(program, 'horizonDebug');
   if (panoramaLocation) gl.uniform1i(panoramaLocation, 0);
 
   let yaw = 0;
   let pitch = 0;
+  let roll = 0;
   let elapsedTime = 0;
+  let horizonDebug = false;
   let disposed = false;
   let imageReady = false;
 
@@ -408,8 +425,9 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     const ditherScale = pixelCount > 1_300_000 ? 1.35 : 1.15;
 
     gl.uniform2f(viewportLocation, canvas.width, canvas.height);
-    gl.uniform2f(viewLocation, yaw, pitch);
+    gl.uniform3f(viewLocation, yaw, pitch, roll);
     gl.uniform1f(timeLocation, elapsedTime);
+    if (horizonDebugLocation) gl.uniform1f(horizonDebugLocation, horizonDebug ? 1 : 0);
     if (renderTuningLocation) gl.uniform2f(renderTuningLocation, sigilQuality, ditherScale);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     if (imageReady) canvas.dataset.ready = 'true';
@@ -429,10 +447,15 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   draw();
 
   return {
-    setView(nextYaw, nextPitch, nextTime = 0) {
+    setView(nextYaw, nextPitch, nextTime = 0, nextRoll = 0) {
       yaw = nextYaw;
       pitch = nextPitch;
+      roll = nextRoll;
       elapsedTime = nextTime;
+      draw();
+    },
+    setHorizonDebug(enabled) {
+      horizonDebug = enabled;
       draw();
     },
     resize: draw,

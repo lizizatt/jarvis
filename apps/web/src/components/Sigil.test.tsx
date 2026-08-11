@@ -3,9 +3,10 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { AmbientSigil } from './Sigil';
 
 const setView = vi.fn();
+const setHorizonDebug = vi.fn();
 
 vi.mock('../virtualWindowRenderer', () => ({
-  createVirtualWindowRenderer: vi.fn(() => ({ setView, resize: vi.fn(), dispose: vi.fn() }))
+  createVirtualWindowRenderer: vi.fn(() => ({ setView, setHorizonDebug, resize: vi.fn(), dispose: vi.fn() }))
 }));
 
 let animationFrame: FrameRequestCallback | undefined;
@@ -23,6 +24,7 @@ function dispatchOrientation(alpha: number, beta: number, gamma: number) {
 afterEach(() => {
   window.localStorage.clear();
   setView.mockReset();
+  setHorizonDebug.mockReset();
   animationFrame = undefined;
   vi.unstubAllGlobals();
 });
@@ -43,7 +45,12 @@ test('moves the virtual window on the first tilt after calibration', () => {
   dispatchOrientation(0, 20, 0);
   animationFrame?.(100);
 
-  expect(setView).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), expect.any(Number));
+  expect(setView).toHaveBeenCalledWith(
+    expect.any(Number),
+    expect.any(Number),
+    expect.any(Number),
+    expect.any(Number)
+  );
   const [yaw, pitch] = setView.mock.calls.at(-1)!;
   expect(Math.hypot(yaw, pitch)).toBeGreaterThan(0.01);
 });
