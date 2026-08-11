@@ -12,6 +12,7 @@ import {
   type MotionPermissionState
 } from '../motion';
 import { SIGIL_FRAME_RATE_OPTIONS, getSigilFrameRate, setSigilFrameRate } from '../renderSettings';
+import { FROST_BLUR_MAX, getFrostBlur, setFrostBlur } from '../frostSettings';
 
 interface InstallPromptEvent extends Event { prompt(): Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 
@@ -36,6 +37,7 @@ export function PwaControls() {
   const [motionEnabled, setMotionEnabled] = useState(() => isMotionBackgroundEnabled());
   const [message, setMessage] = useState('');
   const [frameRate, setFrameRate] = useState(() => getSigilFrameRate());
+  const [frostBlur, setFrostBlurState] = useState(() => getFrostBlur());
   const iosInstallHint = useMemo(() => typeof window !== 'undefined' && detectIosSafari(), []);
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export function PwaControls() {
       <div className="setting-row"><div><strong>Work alerts</strong><p>Questions, task results, and PR updates.</p></div><button className="button secondary" onClick={() => void enablePush()} disabled={notifications === 'granted'}><Bell size={17} />{notifications === 'granted' ? 'Enabled' : 'Enable'}</button></div>
       <div className="setting-row"><div><strong>Motion background</strong><p>{motionPermission === 'unsupported' ? 'Not available in this browser.' : 'Allow motion sensors so the starfield follows device rotation.'}</p></div><button className="button secondary" onClick={() => void toggleMotion()} disabled={motionPermission === 'unsupported'}><Compass size={17} />{motionEnabled ? 'Disable' : 'Enable'}</button></div>
       <div className="setting-row"><div><strong>Animation frame rate</strong><p>Cap how often the digital window redraws. Lower saves battery.</p></div><label className="sr-only" htmlFor="frame-rate">Animation frame rate</label><select id="frame-rate" value={frameRate} onChange={(event) => { const fps = Number(event.currentTarget.value); setFrameRate(fps); setSigilFrameRate(fps); }}>{SIGIL_FRAME_RATE_OPTIONS.map((fps) => <option key={fps} value={fps}>{fps} fps</option>)}</select></div>
+      <div className="setting-row"><div><strong>Frosting</strong><p>Blur the digital window behind repository cards and chat entries.</p></div><div className="frost-control"><input type="range" id="frost-blur" aria-label="Frosting" min={0} max={FROST_BLUR_MAX} step={1} value={frostBlur} onChange={(event) => { const px = Number(event.currentTarget.value); setFrostBlurState(px); setFrostBlur(px); }} /><span>{frostBlur}px</span></div></div>
       <div className="setting-row"><div><strong>Tailnet access</strong><p>Expose a local port through Tailscale.</p></div><Link className="button secondary" to="/settings" onClick={() => setOpen(false)}><Radio size={17} />Open</Link></div>
       {message && <p className="notice">{message}</p>}
     </section></div>, document.body)}
