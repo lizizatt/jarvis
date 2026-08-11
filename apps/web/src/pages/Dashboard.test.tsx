@@ -30,8 +30,25 @@ test('keeps repository registration on the server', async () => {
   render(<App />);
   expect(await screen.findByText('No checkouts configured')).toBeVisible();
   expect(screen.getByText('Register repositories from the Jarvis server.')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'General settings' })).toHaveAttribute('href', '/settings');
+  expect(screen.getByRole('button', { name: 'Settings' })).toBeVisible();
   expect(screen.queryByRole('button', { name: /register/i })).not.toBeInTheDocument();
+});
+
+test('space view toggle hides the repository list without navigating away', async () => {
+  const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify([{ id: 'repo-1', name: 'Flight controls', path: '/src/flight' }]))));
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  expect(await screen.findByText('Flight controls')).toBeVisible();
+  const toggle = screen.getByRole('button', { name: 'Space view' });
+  expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+  await userEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByText('Flight controls')).not.toBeInTheDocument();
+
+  await userEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(await screen.findByText('Flight controls')).toBeVisible();
 });
 
 test('keeps repositories visible while polling in the background', async () => {
