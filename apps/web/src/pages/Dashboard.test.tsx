@@ -30,6 +30,7 @@ test('keeps repository registration on the server', async () => {
   render(<App />);
   expect(await screen.findByText('No checkouts configured')).toBeVisible();
   expect(screen.getByText('Register repositories from the Jarvis server.')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'General settings' })).toHaveAttribute('href', '/settings');
   expect(screen.queryByRole('button', { name: /register/i })).not.toBeInTheDocument();
 });
 

@@ -11,6 +11,7 @@ import { pullRequest, previewCandidates, repositoryDiff, repositoryStatus, repos
 import { CopilotUsageFetcher } from './copilot.js';
 import { HostMetricsSampler } from './metrics.js';
 import { ensureLanding, readPreviewFile, rewritePreviewHtml } from './previews.js';
+import { PortForwarder } from './port-forwarding.js';
 import { PushService } from './push.js';
 import { TaskManager } from './tasks.js';
 import { TerminalManager } from './terminals.js';
@@ -31,12 +32,25 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   const terminals = new TerminalManager(join(config.dataDir, 'terminal-host.sock'), config.terminalHostScript!, config.terminalHostExternal);
   const metrics = new HostMetricsSampler();
   const copilot = new CopilotUsageFetcher();
+  const portForwarder = new PortForwarder(config.tailscaleExecutable);
   await app.register(websocket);
 
   app.addHook('onClose', async () => { await tasks.shutdown(); workers.close(); hub.removeAllListeners(); store.close(); metrics.close(); });
   app.get('/api/health', async () => ({ ok: true, interruptedOnStartup: interrupted }));
   app.get('/api/metrics', async () => metrics.current());
   app.get('/api/copilot-usage', async () => copilot.current());
+  app.get('/api/settings/port-forwards', async (request, reply) => {
+    try { return await portForwarder.list(); }
+    catch (error) { return sendKnownError(reply, error); }
+  });
+  app.post<{ Body: { port?: number } }>('/api/settings/port-forwards', async (request, reply) => {
+    try { return await portForwarder.expose(request.body?.port as number); }
+    catch (error) { return sendKnownError(reply, error); }
+  });
+  app.delete<{ Params: { port: string } }>('/api/settings/port-forwards/:port', async (request, reply) => {
+    try { await portForwarder.close(Number(request.params.port)); return reply.code(204).send(); }
+    catch (error) { return sendKnownError(reply, error); }
+  });
   app.get('/api/config', async () => ({ agentExecutable: config.agentExecutable, policy: config.policy,
     vapidPublicKey: push.publicKey, terminalPersistence: 'node-pty-detached-host' }));
   app.get('/api/workers', async () => workers.list());

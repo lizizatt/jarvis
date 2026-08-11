@@ -45,6 +45,7 @@ export interface ServerConfig {
   webRoot?: string;
   terminalHostScript?: string;
   terminalHostExternal?: boolean;
+  tailscaleExecutable?: string;
   maxJsonLineBytes: number;
   maxStderrChunkBytes: number;
 }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { ArrowDown, ArrowUp, GitBranch, Square } from 'lucide-react';
+import { ArrowDown, ArrowUp, GitBranch, Settings, Square } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { elapsed, useLoad } from '../hooks';
@@ -25,7 +25,7 @@ export function Dashboard() {
 
   return <main className="page dashboard" data-testid="dashboard">
     <AmbientSigil />
-    <header className="page-heading"><h1 className="sr-only">Repositories</h1><SystemWidget /><div className="heading-actions"><PwaControls /></div></header>
+    <header className="page-heading"><h1 className="sr-only">Repositories</h1><SystemWidget /><div className="heading-actions"><PwaControls /><Link className="icon-button" to="/settings" aria-label="General settings"><Settings /></Link></div></header>
     {error && <div className="notice error" role="alert">{error}</div>}
     {loading && <div className="empty">Loading repositories…</div>}
     {!loading && repositories.length === 0 && <div className="empty"><GitBranch size={28} /><h2>No checkouts configured</h2><p>Register repositories from the Jarvis server.</p></div>}

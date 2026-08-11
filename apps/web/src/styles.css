@@ -86,6 +86,18 @@ pre { font-family: 'IBM Plex Mono', monospace; }
 .load-values { display: flex; gap: 18px; margin-top: 6px; color: var(--gold); font-family: 'IBM Plex Mono', monospace; font-size: 1.05rem; }
 .metric-timestamp { margin: 0; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: .68rem; text-align: center; }
 
+.settings-content { padding: 22px 16px calc(32px + env(safe-area-inset-bottom)); }
+.settings-section { display: grid; gap: 20px; max-width: 680px; padding: 20px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.settings-section h2 { margin-bottom: 6px; }
+.settings-section .muted { margin: 0; font-size: .82rem; }
+.port-forward-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.port-forward-form .button { min-width: 146px; }
+.settings-section .notice { margin: 0; }
+.port-forward-result { display: grid; gap: 7px; padding: 14px; background: var(--green-wash); border: 1px solid rgb(72 207 128 / 32%); border-left: 3px solid var(--green); }
+.port-forward-result span { color: var(--muted); font-size: .68rem; font-weight: 700; text-transform: uppercase; }
+.port-forward-result a { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; color: var(--green); font-family: 'IBM Plex Mono', monospace; font-size: .78rem; overflow-wrap: anywhere; }
+.port-forward-result svg { flex: 0 0 auto; }
+
 .button, .icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: 4px; font-weight: 700; transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease, opacity .16s ease; }
 .button:active, .icon-button:active { transform: translateY(1px); }
 .button:disabled, .icon-button:disabled { cursor: not-allowed; opacity: .55; }
@@ -280,6 +292,8 @@ input::placeholder, textarea::placeholder { color: #747c79; }
 @media (max-width: 420px) {
   .page-heading h1 { font-size: 1.55rem; }
   .jarvis-mark { width: 38px; height: 38px; }
+  .port-forward-form { grid-template-columns: 1fr; }
+  .port-forward-form .button { width: 100%; }
 }
 
 @media (min-width: 720px) {
@@ -289,6 +303,7 @@ input::placeholder, textarea::placeholder { color: #747c79; }
   .modal { border-radius: 8px; }
   .detail-page { display: grid; grid-template: auto auto 1fr / 1fr; }
   .detail-header { padding-right: 24px; padding-left: 24px; }
+  .settings-content { padding-right: 24px; padding-left: 24px; }
   .tabs button { flex-direction: row; gap: 7px; font-size: .72rem; }
   .agent-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); }
   .task-sidebar { min-height: calc(100vh - 122px); border-right: 1px solid var(--line); border-bottom: 0; }

@@ -15,6 +15,7 @@ The systemd services load `~/.config/jarvis/.env`. For foreground development, e
 | `JARVIS_AGENT_INSTRUCTIONS_FILE` | checkout `AGENTS.md` | Framework instructions supplied to Jarvis-invoked agents. Use an absolute path to override. |
 | `JARVIS_WEB_ROOT` | `apps/web/dist` | Built PWA assets served by the server. |
 | `JARVIS_TERMINAL_HOST_SCRIPT` | built server terminal host | Override only for a custom distribution. |
+| `JARVIS_TAILSCALE_EXECUTABLE` | `tailscale` | Executable used by General settings to expose local ports to the Tailnet. |
 | `JARVIS_MAX_JSON_LINE_BYTES` | `1048576` | Maximum JSON-encoded task event size. |
 | `JARVIS_MAX_STDERR_CHUNK_BYTES` | `65536` | Maximum buffered agent stderr chunk. |
 

@@ -51,6 +51,54 @@ describe('server MVP', () => {
     expect(metrics.history.length).toBeGreaterThan(0);
   });
 
+  it('exposes validated loopback ports through Tailscale', async () => {
+    const sandbox = await makeSandbox();
+    const executable = join(sandbox.root, 'tailscale');
+    const calls = join(sandbox.root, 'tailscale-calls');
+    await writeFile(executable, `#!/bin/sh
+printf '%s\\n' "$*" >> "${calls}"
+if [ "$1" = status ]; then printf '%s' '{"Self":{"DNSName":"jarvis.example.ts.net."}}'; fi
+`);
+    await chmod(executable, 0o700);
+    const app = await trackedApp({ ...configuration(sandbox.dataDir), tailscaleExecutable: executable });
+
+    const exposed = await app.inject({ method: 'POST', url: '/api/settings/port-forwards', payload: { port: 8080 } });
+    expect(exposed.statusCode).toBe(200);
+    expect(exposed.json()).toEqual({ port: 8080, url: 'https://jarvis.example.ts.net:8080/' });
+    const invalid = await app.inject({ method: 'POST', url: '/api/settings/port-forwards', payload: { port: 65_536 } });
+    expect(invalid.statusCode).toBe(400);
+    expect(await readFile(calls, 'utf8')).not.toContain('65536');
+  });
+
+  it('turns off an exposed port through Tailscale', async () => {
+    const sandbox = await makeSandbox();
+    const executable = join(sandbox.root, 'tailscale');
+    const calls = join(sandbox.root, 'tailscale-calls');
+    await writeFile(executable, `#!/bin/sh
+printf '%s\\n' "$*" >> "${calls}"
+`);
+    await chmod(executable, 0o700);
+    const app = await trackedApp({ ...configuration(sandbox.dataDir), tailscaleExecutable: executable });
+
+    const closed = await app.inject({ method: 'DELETE', url: '/api/settings/port-forwards/8080' });
+    expect(closed.statusCode).toBe(204);
+    expect(await readFile(calls, 'utf8')).toBe('serve --yes --https=8080 http://127.0.0.1:8080 off\n');
+  });
+
+  it('lists currently exposed ports by reading live Tailscale Serve state', async () => {
+    const sandbox = await makeSandbox();
+    const executable = join(sandbox.root, 'tailscale');
+    await writeFile(executable, `#!/bin/sh
+if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.example.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8080/"}}}}}'; fi
+`);
+    await chmod(executable, 0o700);
+    const app = await trackedApp({ ...configuration(sandbox.dataDir), tailscaleExecutable: executable });
+
+    const listed = await app.inject({ method: 'GET', url: '/api/settings/port-forwards' });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual([{ port: 8080, url: 'https://jarvis.example.ts.net:8080/' }]);
+  });
+
   it('registers only real checkout roots and reports status and both diffs', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));
