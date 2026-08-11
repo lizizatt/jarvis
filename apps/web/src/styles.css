@@ -165,6 +165,7 @@ input::placeholder, textarea::placeholder { color: #747c79; }
 .setting-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
 .setting-row strong { font-size: .85rem; }
 .setting-row p { margin: 4px 0 0; color: var(--muted); font-size: .72rem; }
+.setting-row select { width: auto; min-width: 90px; }
 @keyframes rise { from { transform: translateY(25px); opacity: 0; } }
 
 .detail-page { position: relative; isolation: isolate; min-height: 100vh; background: transparent; }

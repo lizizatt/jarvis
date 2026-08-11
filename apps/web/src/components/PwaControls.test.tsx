@@ -10,3 +10,14 @@ test('renders settings above page content in the document layer', async () => {
 
   expect(document.querySelector('.modal-backdrop')?.parentElement).toBe(document.body);
 });
+
+test('persists the selected frame rate cap', async () => {
+  render(<MemoryRouter><PwaControls /></MemoryRouter>);
+  await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+  const select = screen.getByLabelText('Animation frame rate');
+  expect(select).toHaveValue('24');
+
+  await userEvent.selectOptions(select, '30');
+  expect(window.localStorage.getItem('jarvis.sigilFrameRate.fps')).toBe('30');
+});

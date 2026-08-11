@@ -8,6 +8,7 @@ import {
   requestMotionPermission,
   setMotionBackgroundEnabled
 } from '../motion';
+import { SIGIL_FRAME_RATE_EVENT, getSigilFrameRate } from '../renderSettings';
 import {
   applyDeadZone,
   clamp,
@@ -42,6 +43,8 @@ export function AmbientSigil() {
     let lastSensorUpdate = 0;
     let disposed = false;
     let frame = 0;
+    let frameInterval = 1000 / getSigilFrameRate();
+    let lastDrawTime = -Infinity;
     let orientationActive = false;
     let referenceQuaternion: Quaternion | null = null;
     let referenceAngles: { pitch: number; yaw: number } | null = null;
@@ -204,9 +207,18 @@ export function AmbientSigil() {
       current.y += (target.y - current.y) * blend;
       currentPan.x += (targetPan.x - currentPan.x) * blend;
       currentPan.y += (targetPan.y - currentPan.y) * blend;
-      drawScene(time);
+      if (time - lastDrawTime >= frameInterval) {
+        lastDrawTime = time;
+        drawScene(time);
+      }
       frame = window.requestAnimationFrame(animate);
     };
+
+    const onFrameRateChange = (event: Event) => {
+      const fps = (event as CustomEvent<number>).detail;
+      frameInterval = 1000 / (fps > 0 ? fps : getSigilFrameRate());
+    };
+    window.addEventListener(SIGIL_FRAME_RATE_EVENT, onFrameRateChange as EventListener);
 
     drawScene();
     frame = window.requestAnimationFrame(animate);
@@ -221,6 +233,7 @@ export function AmbientSigil() {
       window.removeEventListener('resize', onResize);
       window.removeEventListener(MOTION_PERMISSION_EVENT, onPermissionChange as EventListener);
       window.removeEventListener(MOTION_BACKGROUND_EVENT, onMotionBackgroundChange as EventListener);
+      window.removeEventListener(SIGIL_FRAME_RATE_EVENT, onFrameRateChange as EventListener);
       renderer?.dispose();
     };
   }, []);
