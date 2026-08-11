@@ -21,6 +21,7 @@ uniform sampler2D panorama;
 uniform vec2 viewport;
 uniform vec2 viewAngles;
 uniform float elapsedTime;
+uniform vec2 renderTuning;
 
 float lineSegment(vec2 point, vec2 start, vec2 end, float width) {
   vec2 segment = end - start;
@@ -32,9 +33,9 @@ float ring(vec2 point, float radius, float width) {
   return 1.0 - smoothstep(width, width * 2.0, abs(length(point) - radius));
 }
 
-float dashedRing(vec2 point, float radius, float width, float phase) {
+float dashedRing(vec2 point, float radius, float width, float phase, float spokes) {
   float angle = atan(point.y, point.x);
-  float dash = smoothstep(-0.15, 0.25, sin(angle * 8.0 + phase));
+  float dash = smoothstep(-0.22, 0.28, sin(angle * spokes + phase));
   return ring(point, radius, width) * dash;
 }
 
@@ -42,8 +43,87 @@ float node(vec2 point, vec2 center, float radius) {
   return 1.0 - smoothstep(radius, radius * 1.8, length(point - center));
 }
 
-// A 4x4 Bayer matrix keeps the projected marks crisp and deliberately
-// pixel-textured without adding random shimmer to their slow animation.
+float halo(vec2 point, float radius, float feather) {
+  float d = length(point);
+  return 1.0 - smoothstep(radius, radius + feather, d);
+}
+
+float runeSpoke(vec2 point, float angle, float inner, float outer, float width) {
+  vec2 dir = vec2(cos(angle), sin(angle));
+  return lineSegment(point, dir * inner, dir * outer, width);
+}
+
+float starBurst(vec2 point, float rays, float width, float spin) {
+  float angle = atan(point.y, point.x);
+  float rayMask = abs(sin(angle * rays + spin));
+  float spoke = 1.0 - smoothstep(0.0, width, rayMask);
+  float falloff = smoothstep(0.95, 0.08, length(point));
+  return spoke * falloff;
+}
+
+float spiralRune(vec2 point, float arms, float twist, float width, float phase) {
+  float angle = atan(point.y, point.x);
+  float radius = length(point);
+  float wave = sin(angle * arms + radius * twist + phase);
+  float spiral = 1.0 - smoothstep(0.0, width, abs(wave));
+  return spiral * smoothstep(0.82, 0.04, radius);
+}
+
+float hash11(float value) {
+  return fract(sin(value * 127.1) * 43758.5453123);
+}
+
+float triWave(float value) {
+  return abs(fract(value) - 0.5) * 2.0;
+}
+
+float hash21(vec2 value) {
+  return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+vec2 hash22(vec2 value) {
+  return vec2(
+    hash21(value + vec2(1.0, 0.0)),
+    hash21(value + vec2(0.0, 1.0))
+  );
+}
+
+float animatedSigil(vec3 ray, vec2 center, float radius, float time, float phase, float variant);
+
+float sigilField(vec3 ray, float time, float quality) {
+  const float maxSigils = 108.0;
+  float total = 0.0;
+  for (int index = 0; index < 108; index++) {
+    float fi = float(index);
+    if (fi >= quality) break;
+
+    vec2 seed = vec2(fi * 1.13 + 3.7, fi * 1.91 + 9.2);
+    vec2 jitter = hash22(seed);
+    vec2 center = vec2((fi + 0.5) / maxSigils, 0.04 + jitter.y * 0.92);
+    center.x = fract(center.x + (jitter.x - 0.5) * 0.34 + sin(fi * 0.33 + jitter.y * 6.28318530718) * 0.04);
+    float radius = mix(0.015, 0.046, hash21(seed + 4.0));
+    float phase = hash21(seed + 7.0) * 6.28318530718;
+    float variant = floor(hash21(seed + 12.0) * 4.0);
+    float layerOffset = hash21(seed + 19.0) * 6.28318530718;
+    float shimmer = triWave(time * 0.05 + hash11(fi + 1.0));
+    total += animatedSigil(ray, center, radius, time, phase + layerOffset, variant) * mix(0.82, 1.2, shimmer);
+
+    if (quality > 54.0 || mod(fi, 2.0) < 0.5) {
+      vec2 echoCenter = vec2(fract(center.x + 0.12 + jitter.y * 0.07), clamp(center.y + (jitter.x - 0.5) * 0.09, 0.03, 0.97));
+      float echoRadius = radius * mix(0.52, 0.78, jitter.x);
+      total += animatedSigil(ray, echoCenter, echoRadius, time * 1.14, phase + 2.7, mod(variant + 1.0, 4.0)) * 0.52;
+    }
+
+    if (quality > 90.0) {
+      vec2 twinCenter = vec2(fract(center.x - 0.16 - jitter.x * 0.08), clamp(center.y + (jitter.y - 0.5) * 0.14, 0.02, 0.98));
+      float twinRadius = radius * mix(0.34, 0.55, hash21(seed + 31.0));
+      total += animatedSigil(ray, twinCenter, twinRadius, time * 0.82, phase - 1.9, mod(variant + 2.0, 4.0)) * 0.34;
+    }
+  }
+  return total;
+}
+
+// A 4x4 Bayer matrix keeps projected marks crisp while avoiding noisy shimmer.
 float bayer4(vec2 pixel) {
   vec2 cell = mod(floor(pixel), 4.0);
   float x = cell.x;
@@ -72,8 +152,6 @@ float bayer4(vec2 pixel) {
   return 5.5 / 16.0;
 }
 
-// Reimplements the library's layered animation style: counter-rotating
-// orbits, independently turning geometry, travelling nodes, and a slow pulse.
 float animatedSigil(vec3 ray, vec2 center, float radius, float time, float phase, float variant) {
   float longitude = (center.x - 0.5) * 6.28318530718;
   float latitude = (center.y - 0.5) * 3.14159265359;
@@ -83,20 +161,37 @@ float animatedSigil(vec3 ray, vec2 center, float radius, float time, float phase
   float facing = dot(ray, forward);
   if (facing <= 0.0) return 0.0;
 
-  // Project onto the sigil's tangent plane. Unlike measuring equirectangular
-  // UV deltas, this uses the same perspective ray as the panorama and keeps
-  // circular marks circular at every latitude and across the texture seam.
   vec2 point = vec2(dot(ray, right), dot(ray, up)) / (facing * radius * 3.14159265359);
+  float pointRadiusSq = dot(point, point);
+  if (pointRadiusSq > 1.69) return 0.0;
 
   float turn = time * (0.055 + variant * 0.008) + phase;
   float cosine = cos(turn);
   float sine = sin(turn);
-  vec2 geometry = mat2(cosine, -sine, sine, cosine) * point;
+  vec2 geometry = vec2(cosine * point.x - sine * point.y, sine * point.x + cosine * point.y);
+
+  float counterTurn = turn * -0.74;
+  float counterCos = cos(counterTurn);
+  float counterSin = sin(counterTurn);
+  vec2 counter = vec2(counterCos * point.x - counterSin * point.y, counterSin * point.x + counterCos * point.y);
+
+  float shimmerTurn = turn * 1.8;
+  float shimmerCos = cos(shimmerTurn);
+  float shimmerSin = sin(shimmerTurn);
+  vec2 shimmer = vec2(shimmerCos * point.x - shimmerSin * point.y, shimmerSin * point.x + shimmerCos * point.y);
   float pulse = 0.92 + sin(time * 0.42 + phase) * 0.08;
 
-  float mark = ring(point, 0.78 * pulse, 0.012);
-  mark += dashedRing(point, 0.61, 0.009, -time * 0.34 + phase);
-  mark += dashedRing(point, 0.48, 0.006, time * 0.26 - phase);
+  float mark = ring(point, 0.82 * pulse, 0.012);
+  mark += ring(point, 0.71, 0.008);
+  mark += dashedRing(point, 0.61, 0.010, -time * 0.34 + phase, 8.0 + variant);
+  mark += dashedRing(point, 0.48, 0.007, time * 0.26 - phase, 10.0 + variant * 2.0);
+  mark += dashedRing(point, 0.34, 0.005, time * 0.55 + phase * 0.3, 16.0);
+  mark += dashedRing(point, 0.22, 0.004, -time * 0.75 + phase, 20.0 + variant * 3.0);
+  mark += dashedRing(counter, 0.56, 0.005, time * 0.46 + phase * 1.3, 24.0 + variant * 4.0);
+  mark += ring(shimmer, 0.14, 0.003);
+  mark += ring(counter, 0.11, 0.003);
+  mark += ring(geometry, 0.27, 0.003);
+
   if (variant < 0.5) {
     mark += lineSegment(geometry, vec2(0.0, -0.70), vec2(-0.61, 0.43), 0.012);
     mark += lineSegment(geometry, vec2(-0.61, 0.43), vec2(0.61, 0.43), 0.012);
@@ -105,18 +200,51 @@ float animatedSigil(vec3 ray, vec2 center, float radius, float time, float phase
     mark += lineSegment(geometry, vec2(-0.52, -0.52), vec2(0.52, 0.52), 0.012);
     mark += lineSegment(geometry, vec2(0.52, -0.52), vec2(-0.52, 0.52), 0.012);
     mark += lineSegment(geometry, vec2(-0.48, 0.0), vec2(0.48, 0.0), 0.012);
-  } else {
+  } else if (variant < 2.5) {
     mark += lineSegment(geometry, vec2(0.0, -0.62), vec2(0.50, 0.0), 0.012);
     mark += lineSegment(geometry, vec2(0.50, 0.0), vec2(0.0, 0.62), 0.012);
     mark += lineSegment(geometry, vec2(0.0, 0.62), vec2(-0.50, 0.0), 0.012);
     mark += lineSegment(geometry, vec2(-0.50, 0.0), vec2(0.0, -0.62), 0.012);
+  } else {
+    mark += lineSegment(geometry, vec2(-0.60, -0.22), vec2(0.0, 0.66), 0.012);
+    mark += lineSegment(geometry, vec2(0.60, -0.22), vec2(0.0, 0.66), 0.012);
+    mark += lineSegment(geometry, vec2(-0.60, -0.22), vec2(0.60, -0.22), 0.012);
+    mark += lineSegment(geometry, vec2(-0.38, 0.08), vec2(0.38, 0.08), 0.010);
+    mark += lineSegment(geometry, vec2(0.0, -0.64), vec2(0.0, 0.56), 0.010);
   }
-  mark += lineSegment(geometry, vec2(-0.68, 0.0), vec2(0.68, 0.0), 0.007);
-  mark += lineSegment(geometry, vec2(0.0, -0.68), vec2(0.0, 0.68), 0.007);
+
+  mark += lineSegment(counter, vec2(-0.68, 0.0), vec2(0.68, 0.0), 0.007);
+  mark += lineSegment(counter, vec2(0.0, -0.68), vec2(0.0, 0.68), 0.007);
+  mark += lineSegment(counter, vec2(-0.48, -0.48), vec2(0.48, 0.48), 0.005);
+  mark += lineSegment(counter, vec2(0.48, -0.48), vec2(-0.48, 0.48), 0.005);
+  mark += lineSegment(shimmer, vec2(-0.56, -0.56), vec2(0.56, 0.56), 0.004);
+  mark += lineSegment(shimmer, vec2(0.56, -0.56), vec2(-0.56, 0.56), 0.004);
+
+  float spokeSeed = phase * 0.4 + variant;
+  mark += runeSpoke(counter, spokeSeed, 0.17, 0.43, 0.006);
+  mark += runeSpoke(counter, spokeSeed + 1.047, 0.17, 0.43, 0.006);
+  mark += runeSpoke(counter, spokeSeed + 2.094, 0.17, 0.43, 0.006);
+  mark += runeSpoke(counter, spokeSeed + 3.14159, 0.11, 0.37, 0.005);
+  mark += runeSpoke(shimmer, spokeSeed + 0.33, 0.06, 0.31, 0.004);
+  mark += runeSpoke(shimmer, spokeSeed + 1.89, 0.06, 0.31, 0.004);
+  mark += runeSpoke(geometry, spokeSeed + 2.62, 0.09, 0.28, 0.004);
+  mark += starBurst(shimmer, 6.0 + variant * 2.0, 0.08, time * 0.31 + phase) * 0.28;
+  mark += starBurst(counter, 9.0 + variant * 3.0, 0.09, -time * 0.28 + phase) * 0.22;
+  mark += starBurst(geometry, 12.0 + variant * 2.0, 0.1, time * 0.44 - phase * 0.6) * 0.17;
+  mark += spiralRune(geometry, 4.0 + variant, 11.0, 0.09, time * 0.6 + phase) * 0.24;
+  mark += spiralRune(shimmer, 7.0 + variant, -14.0, 0.08, -time * 0.7 + phase * 0.3) * 0.18;
+  mark += spiralRune(counter, 5.0 + variant, 17.0, 0.07, time * 0.52 - phase * 0.4) * 0.14;
 
   float nodeAngle = time * 0.23 + phase;
   mark += node(point, vec2(cos(nodeAngle), sin(nodeAngle)) * 0.61, 0.035);
   mark += node(point, vec2(cos(-nodeAngle * 0.73), sin(-nodeAngle * 0.73)) * 0.48, 0.025);
+  mark += node(point, vec2(cos(nodeAngle * 1.24 + 1.9), sin(nodeAngle * 1.24 + 1.9)) * 0.34, 0.020);
+  mark += node(point, vec2(cos(nodeAngle * -1.48 + 0.8), sin(nodeAngle * -1.48 + 0.8)) * 0.22, 0.016);
+  mark += node(point, vec2(cos(nodeAngle * 2.2 + 2.7), sin(nodeAngle * 2.2 + 2.7)) * 0.74, 0.022);
+
+  mark += halo(point, 0.94, 0.36) * 0.22;
+  mark += halo(point, 0.62, 0.22) * 0.12;
+  mark += halo(point, 0.31, 0.14) * 0.08;
   return clamp(mark, 0.0, 1.0);
 }
 
@@ -144,32 +272,43 @@ void main() {
 
   vec4 stars = texture2D(panorama, uv);
   float time = elapsedTime;
-  // A denser field of half-scale marks keeps each sigil incidental while the
-  // varied phases preserve the library-inspired independent choreography.
-  float marks = animatedSigil(ray, vec2(0.04, 0.56), 0.040, time, 0.2, 0.0);
-  marks += animatedSigil(ray, vec2(0.10, 0.76), 0.030, time, 5.8, 2.0);
-  marks += animatedSigil(ray, vec2(0.17, 0.31), 0.034, time, 1.4, 1.0);
-  marks += animatedSigil(ray, vec2(0.23, 0.64), 0.028, time, 3.1, 2.0);
-  marks += animatedSigil(ray, vec2(0.29, 0.45), 0.038, time, 4.7, 0.0);
-  marks += animatedSigil(ray, vec2(0.35, 0.82), 0.025, time, 2.7, 1.0);
-  marks += animatedSigil(ray, vec2(0.41, 0.22), 0.032, time, 6.0, 2.0);
-  marks += animatedSigil(ray, vec2(0.47, 0.59), 0.036, time, 0.9, 0.0);
-  marks += animatedSigil(ray, vec2(0.53, 0.37), 0.027, time, 4.1, 1.0);
-  marks += animatedSigil(ray, vec2(0.59, 0.73), 0.033, time, 2.2, 2.0);
-  marks += animatedSigil(ray, vec2(0.65, 0.16), 0.026, time, 5.3, 1.0);
-  marks += animatedSigil(ray, vec2(0.71, 0.51), 0.039, time, 3.4, 0.0);
-  marks += animatedSigil(ray, vec2(0.77, 0.84), 0.029, time, 1.8, 2.0);
-  marks += animatedSigil(ray, vec2(0.83, 0.28), 0.035, time, 5.0, 1.0);
-  marks += animatedSigil(ray, vec2(0.89, 0.66), 0.031, time, 0.5, 0.0);
-  marks += animatedSigil(ray, vec2(0.95, 0.43), 0.037, time, 3.8, 2.0);
+  float quality = renderTuning.x;
+  float ditherScale = renderTuning.y;
+  float marks = sigilField(ray, time, quality);
+  float markGlow = smoothstep(0.35, 2.7, marks);
   marks = clamp(marks, 0.0, 1.0);
 
-  // Quantize only the sigil layer in screen space. The pattern therefore
-  // follows the same spherical projection while the star panorama stays clean.
-  float dither = bayer4(gl_FragCoord.xy / 1.5);
-  float ditheredMarks = step(dither, marks) * (0.72 + dither * 0.28);
-  vec3 sigilColor = vec3(1.0, 0.20, 0.22);
-  vec3 color = stars.rgb + sigilColor * ditheredMarks * 0.52;
+  float dither = bayer4(gl_FragCoord.xy / ditherScale);
+  float ditheredMarks = step(dither, marks) * (0.74 + dither * 0.26);
+
+  float aurora = 0.5 + 0.5 * sin(ray.y * 16.0 + ray.x * 7.5 - time * 0.65);
+  aurora *= smoothstep(-0.35, 0.55, ray.y + sin(time * 0.15) * 0.12);
+
+  float flareBand = smoothstep(0.2, 0.88, marks) * (0.6 + 0.4 * sin(time * 0.8 + ray.x * 18.0 + ray.y * 14.0));
+  float prism = 0.5 + 0.5 * sin(ray.x * 28.0 + ray.y * 19.0 + time * 0.9);
+  float nebula = smoothstep(0.1, 1.0, aurora) * (0.55 + 0.45 * sin(time * 0.33 + ray.x * 9.0));
+  float corona = smoothstep(0.52, 1.0, marks) * (0.5 + 0.5 * sin(time * 1.6 + ray.x * 34.0));
+
+  vec3 crimson = vec3(1.0, 0.15, 0.24);
+  vec3 violet = vec3(0.72, 0.28, 1.0);
+  vec3 cyan = vec3(0.2, 0.96, 0.88);
+  vec3 gold = vec3(1.0, 0.78, 0.28);
+  vec3 ember = mix(crimson, violet, 0.45 + 0.45 * sin(time * 0.37 + ray.x * 5.0));
+  vec3 prismColor = mix(violet, cyan, prism);
+  vec3 auroraColor = vec3(0.14, 0.48, 0.44) * aurora * 0.16;
+
+  float bloom = smoothstep(0.4, 1.0, marks) * (0.74 + 0.26 * sin(time * 1.1 + ray.y * 21.0));
+  float spectral = smoothstep(0.2, 0.95, marks) * (0.5 + 0.5 * sin(time * 0.63 + ray.x * 31.0 - ray.y * 17.0));
+
+  vec3 color = stars.rgb * vec3(0.88, 0.9, 1.0);
+  color += ember * ditheredMarks * 0.66;
+  color += prismColor * flareBand * 0.28;
+  color += mix(cyan, crimson, spectral) * bloom * 0.18;
+  color += mix(gold, cyan, prism) * corona * 0.12;
+  color += auroraColor;
+  color += vec3(0.1, 0.03, 0.14) * marks * 0.3;
+  color += vec3(0.06, 0.09, 0.15) * nebula * 0.2;
+  color += vec3(0.08, 0.05, 0.18) * markGlow * 0.14;
   gl_FragColor = vec4(color, 1.0);
 }`;
 
@@ -237,7 +376,8 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   const viewportLocation = gl.getUniformLocation(program, 'viewport');
   const viewLocation = gl.getUniformLocation(program, 'viewAngles');
   const timeLocation = gl.getUniformLocation(program, 'elapsedTime');
-  gl.uniform1i(panoramaLocation, 0);
+  const renderTuningLocation = gl.getUniformLocation(program, 'renderTuning');
+  if (panoramaLocation) gl.uniform1i(panoramaLocation, 0);
 
   let yaw = 0;
   let pitch = 0;
@@ -260,9 +400,17 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     if (disposed) return;
     resize();
     gl.useProgram(program);
+
+    const pixelCount = canvas.width * canvas.height;
+    let sigilQuality = 56;
+    if (pixelCount > 700_000) sigilQuality = 84;
+    if (pixelCount > 1_300_000) sigilQuality = 108;
+    const ditherScale = pixelCount > 1_300_000 ? 1.35 : 1.15;
+
     gl.uniform2f(viewportLocation, canvas.width, canvas.height);
     gl.uniform2f(viewLocation, yaw, pitch);
     gl.uniform1f(timeLocation, elapsedTime);
+    if (renderTuningLocation) gl.uniform2f(renderTuningLocation, sigilQuality, ditherScale);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     if (imageReady) canvas.dataset.ready = 'true';
   }

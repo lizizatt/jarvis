@@ -53,6 +53,10 @@ npm run dev
 
 The production server serves `apps/web/dist`; rebuilding web assets changes what it serves without rebuilding the server. See [AGENTS.md](AGENTS.md) for scoped test and release commands.
 
+## Visual Verification
+
+For UI changes, walk every page in a mobile viewport and screenshot it with the Playwright browser tools: Dashboard (`/`), each Repository Detail tab (Agent, Changes, Terminal, Preview), Task History, Settings, and System Detail. Set the viewport to a phone size (e.g. 390x844), navigate to each route, and compare the screenshot against the intended design before calling a visual fix done.
+
 ## Repository Registration
 
 Jarvis does not scan the filesystem. With the server running:
