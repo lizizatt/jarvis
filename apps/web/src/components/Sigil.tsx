@@ -42,11 +42,12 @@ export function AmbientSigil() {
     const canvas = canvasRef.current;
     if (!hostEl || !canvas || typeof window === 'undefined') return;
     const renderer = createVirtualWindowRenderer(canvas, STARMAP_URL);
+    const horizonDebug = readHorizonDebugFlag();
 
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
     const target = { x: 0, y: 0 };
     const targetPan = { x: 0, y: 0 };
-    let motionEnabled = isMotionBackgroundEnabled();
+    let motionEnabled = isMotionBackgroundEnabled() || horizonDebug;
     let pointerActive = false;
     const current = { x: 0, y: 0 };
     const currentPan = { x: 0, y: 0 };
@@ -55,6 +56,7 @@ export function AmbientSigil() {
     let frame = 0;
     let frameInterval = 1000 / getSigilFrameRate();
     let lastDrawTime = -Infinity;
+    let animationStartTime: number | null = null;
     let orientationActive = false;
     let referenceQuaternion: Quaternion | null = null;
     let referenceAngles: { pitch: number; yaw: number } | null = null;
@@ -63,12 +65,13 @@ export function AmbientSigil() {
     let currentRoll = 0;
     let targetRoll = 0;
 
-    renderer?.setHorizonDebug(readHorizonDebugFlag());
+    renderer?.setHorizonDebug(horizonDebug);
 
     function drawScene(time = 0) {
       // Stars and sigils share spherical UV coordinates, so both remain behind
       // the window and track the same full-surround view.
-      renderer?.setView(currentPan.x, currentPan.y, reducedMotion ? 0 : time / 1000, currentRoll);
+      const elapsedSeconds = animationStartTime === null ? 0 : (time - animationStartTime) / 1000;
+      renderer?.setView(currentPan.x, currentPan.y, reducedMotion ? 0 : elapsedSeconds, currentRoll);
     }
 
     function screenOrientationAngle() {
@@ -120,7 +123,7 @@ export function AmbientSigil() {
 
         targetPan.x = relativeUnwrapped.yaw;
         targetPan.y = clamp(relativeUnwrapped.pitch, -Math.PI / 2, Math.PI / 2);
-        targetRoll = windowAngles.roll;
+        targetRoll = windowAngles.roll + gamma * Math.PI / 180;
       }
       lastSensorUpdate = performance.now();
     }
@@ -196,7 +199,7 @@ export function AmbientSigil() {
       if (getMotionPermissionState() === 'granted') ensureOrientationListener();
     };
 
-    if (motionEnabled && getMotionPermissionState() === 'granted') ensureOrientationListener();
+    if (motionEnabled && (horizonDebug || getMotionPermissionState() === 'granted')) ensureOrientationListener();
     window.addEventListener(MOTION_PERMISSION_EVENT, onPermissionChange as EventListener);
     window.addEventListener(MOTION_BACKGROUND_EVENT, onMotionBackgroundChange as EventListener);
     window.addEventListener('pointerdown', requestFromGesture, { once: true, passive: true });
@@ -208,6 +211,7 @@ export function AmbientSigil() {
 
     const animate = (time: number) => {
       if (disposed) return;
+      if (animationStartTime === null) animationStartTime = time;
       const sensorFresh = motionEnabled && time - lastSensorUpdate < 1200;
       if (!motionEnabled) {
         target.x = 0;

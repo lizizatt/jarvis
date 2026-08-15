@@ -5,7 +5,8 @@
   "type": "module",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "sigil-lib"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -14,6 +15,7 @@
     "dev:web": "npm run dev --workspace @jarvis/web",
     "lint": "eslint .",
     "repo:add": "node tools/register-repository.mjs",
+    "digital-window:harness": "node scripts/digital-window-harness.mjs",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run build --workspace @jarvis/web && playwright test",
     "typecheck": "npm run typecheck --workspaces --if-present"

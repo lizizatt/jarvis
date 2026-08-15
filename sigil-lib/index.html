@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sigil Viewer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #14161c;
+        --panel: #1d2029;
+        --accent: #6cb6ff;
+        --text: #e6e8ee;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        min-height: 100vh;
+      }
+      .stage {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      /* Checkerboard so transparent areas of the sigil are visible. */
+      #display {
+        width: 512px;
+        height: 512px;
+        max-width: 80vmin;
+        max-height: 80vmin;
+        border-radius: 8px;
+        background-color: #2b2f3a;
+        background-image:
+          linear-gradient(45deg, #20232c 25%, transparent 25%),
+          linear-gradient(-45deg, #20232c 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #20232c 75%),
+          linear-gradient(-45deg, transparent 75%, #20232c 75%);
+        background-size: 24px 24px;
+        background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+      }
+      .panel {
+        width: 300px;
+        padding: 20px;
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        border-left: 1px solid #2a2e39;
+      }
+      h1 { font-size: 16px; margin: 0 0 4px; letter-spacing: 0.04em; }
+      label { display: block; font-size: 12px; opacity: 0.8; margin-bottom: 6px; }
+      .row { display: flex; flex-direction: column; }
+      input[type='text'] {
+        width: 100%;
+        padding: 8px 10px;
+        background: #11131a;
+        border: 1px solid #2f3340;
+        border-radius: 6px;
+        color: var(--text);
+        font-family: ui-monospace, monospace;
+      }
+      input[type='range'] { width: 100%; accent-color: var(--accent); }
+      .val { font-family: ui-monospace, monospace; color: var(--accent); }
+      .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+      button, a.btn {
+        flex: 1;
+        padding: 9px 10px;
+        border: 1px solid #353a48;
+        background: #262b36;
+        color: var(--text);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        text-align: center;
+        text-decoration: none;
+      }
+      button:hover, a.btn:hover { background: #2f3542; }
+      button.primary { background: var(--accent); color: #0c1018; border-color: var(--accent); font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <canvas id="display" width="512" height="512"></canvas>
+    </div>
+    <aside class="panel">
+      <h1>SPELL SIGIL</h1>
+
+      <div class="row">
+        <label for="seed">Seed</label>
+        <input id="seed" type="text" value="materia" />
+      </div>
+
+      <div class="row">
+        <label>Max Depth — <span id="depthVal" class="val">5</span></label>
+        <input id="depth" type="range" min="1" max="7" step="1" value="5" />
+      </div>
+
+      <div class="row">
+        <label>Outer Radius — <span id="radiusVal" class="val">0.90</span></label>
+        <input id="radius" type="range" min="0.3" max="1" step="0.01" value="0.9" />
+      </div>
+
+      <div class="row">
+        <label>First Layer Nodes — <span id="firstLayerVal" class="val">3</span></label>
+        <input id="firstLayer" type="range" min="1" max="8" step="1" value="3" />
+      </div>
+
+      <div class="row">
+        <label>Node Stop Chance — <span id="stopVal" class="val">0.35</span></label>
+        <input id="stop" type="range" min="0" max="1" step="0.05" value="0.35" />
+      </div>
+
+      <div class="row">
+        <label>Ring Period — <span id="periodVal" class="val">8.0</span> s (cw)</label>
+        <input id="period" type="range" min="-30" max="30" step="0.5" value="8" />
+      </div>
+
+      <div class="buttons">
+        <button id="regen" class="primary">Regenerate</button>
+        <button id="redraw">Redraw</button>
+        <button id="play">Pause</button>
+      </div>
+      <div class="buttons">
+        <a id="download" class="btn" download="sigil.png">Download PNG</a>
+      </div>
+    </aside>
+
+    <script type="module" src="/src/viewer.js"></script>
+  </body>
+</html>

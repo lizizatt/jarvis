@@ -1,3 +1,5 @@
+import { renderSigilAtlas } from 'sigil-lib';
+
 export type VirtualWindowRenderer = {
   setView(yaw: number, pitch: number, timeSeconds?: number, roll?: number): void;
   setHorizonDebug(enabled: boolean): void;
@@ -19,6 +21,8 @@ const FRAGMENT_SHADER = `
 precision mediump float;
 varying vec2 screenPosition;
 uniform sampler2D panorama;
+uniform sampler2D sigilAtlas;
+uniform float sigilAtlasCount;
 uniform vec2 viewport;
 uniform vec3 viewAngles;
 uniform float elapsedTime;
@@ -91,6 +95,111 @@ vec2 hash22(vec2 value) {
 }
 
 float animatedSigil(vec3 ray, vec2 center, float radius, float time, float phase, float variant);
+
+// Samples the baked sigil-lib atlas: each of sigilAtlasCount columns holds
+// one procedurally generated base-shape (white stroked line-art on
+// transparent black, same convention as sigil.js's renderSigilToCanvas).
+// point is expected in roughly [-1, 1]; variant selects the column and
+// also spins the sample so the procedural silhouette still turns with the
+// dashed rings/runes layered around it.
+float sigilAtlasMask(vec2 point, float variant) {
+  vec2 uv = point * 0.5 + 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+  float column = mod(floor(variant), sigilAtlasCount);
+  vec2 atlasUv = vec2((column + uv.x) / sigilAtlasCount, uv.y);
+  return texture2D(sigilAtlas, atlasUv).a;
+}
+
+// A vast ringworld-like halo of runes girdling the equator: two crisp
+// horizontal spell-lines five degrees above and below the horizon, with the
+// band between them tiled in alternating rune glyphs and connecting rungs.
+// Distant and enormous by design -- it reads as a structure, not a sigil.
+float haloRune(vec3 ray, float time) {
+  float longitude = atan(ray.x, -ray.z);
+  float latitude = asin(clamp(ray.y, -1.0, 1.0));
+  float bandHalf = radians(2.5);
+  float channelHalf = radians(0.58);
+  float softEdge = radians(0.35);
+  float distFromCenter = abs(latitude);
+  float insideBand = 1.0 - smoothstep(bandHalf - softEdge, bandHalf + softEdge * 0.4, distFromCenter);
+  float lineWidth = radians(0.045);
+  float topLine = 1.0 - smoothstep(lineWidth, lineWidth * 3.2, abs(latitude - bandHalf));
+  float bottomLine = 1.0 - smoothstep(lineWidth, lineWidth * 3.2, abs(latitude + bandHalf));
+  float channelTop = 1.0 - smoothstep(lineWidth * 0.7, lineWidth * 2.4, abs(latitude - channelHalf));
+  float channelBottom = 1.0 - smoothstep(lineWidth * 0.7, lineWidth * 2.4, abs(latitude + channelHalf));
+  float channelLine = (1.0 - smoothstep(lineWidth * 0.35, lineWidth * 1.4, distFromCenter)) * 0.62;
+  float lines = clamp(topLine + bottomLine + channelTop + channelBottom + channelLine, 0.0, 1.0);
+
+  if (insideBand <= 0.001 && lines <= 0.001) return 0.0;
+
+  float v = clamp((latitude + bandHalf) / (2.0 * bandHalf), 0.0, 1.0);
+  float segments = 140.0;
+  float drift = time * 0.015;
+  float cellSpan = longitude * segments / 6.28318530718 + drift;
+  float cellId = floor(cellSpan);
+  float cellFrac = fract(cellSpan);
+  float glyphSeed = hash11(cellId + 41.0);
+  float tickEdge = 1.0 - smoothstep(0.018, 0.052, min(cellFrac, 1.0 - cellFrac));
+  float tickHeight = mix(radians(0.36), radians(1.18), step(0.72, hash11(cellId + 63.0)));
+  float scaleTick = tickEdge * (1.0 - smoothstep(lineWidth * 0.8, lineWidth * 1.8, abs(latitude) - tickHeight));
+  float channelNotch = (1.0 - smoothstep(0.018, 0.05, abs(cellFrac - 0.5))) *
+    (1.0 - smoothstep(radians(0.05), radians(0.12), abs(latitude)));
+
+  vec2 local = vec2((cellFrac - 0.5) * 2.0, (v - 0.5) * 2.0);
+  float glyph = 0.0;
+  float glyphType = floor(glyphSeed * 4.0);
+  if (glyphType < 1.0) {
+    glyph = 1.0 - smoothstep(0.05, 0.1, abs(abs(local.x) + abs(local.y) - 0.62));
+  } else if (glyphType < 2.0) {
+    glyph = ring(local, 0.56, 0.07);
+    glyph += lineSegment(local, vec2(0.0, -0.56), vec2(0.0, 0.56), 0.05);
+  } else if (glyphType < 3.0) {
+    glyph = lineSegment(local, vec2(-0.5, -0.6), vec2(0.5, 0.6), 0.06);
+    glyph += lineSegment(local, vec2(0.5, -0.6), vec2(-0.5, 0.6), 0.06);
+    glyph += ring(local, 0.22, 0.05);
+  } else {
+    glyph = dashedRing(local, 0.6, 0.08, glyphSeed * 6.28318530718, 5.0);
+    glyph += node(local, vec2(0.0, 0.0), 0.14);
+  }
+  glyph *= smoothstep(0.02, 0.16, cellFrac) * smoothstep(0.02, 0.16, 1.0 - cellFrac);
+
+  float rungGate = step(0.55, hash11(cellId + 7.0));
+  float rung = (1.0 - smoothstep(0.02, 0.06, abs(cellFrac - 0.5))) * rungGate;
+
+  float shimmer = 0.85 + 0.15 * sin(time * 0.4 + cellId * 1.7);
+  float pattern = clamp(glyph * shimmer + rung * 0.6 + scaleTick * 0.72 + channelNotch * 0.38, 0.0, 1.0) * insideBand;
+  return clamp(pattern * 0.85 + lines, 0.0, 1.0);
+}
+
+float orbitingEarthMask(vec3 ray, float time) {
+  float orbitAngle = time * 0.0104719755;
+  float longitude = atan(ray.x, -ray.z);
+  float latitude = asin(clamp(ray.y, -1.0, 1.0));
+  float longitudeDelta = abs(mod(longitude - orbitAngle + 3.14159265359, 6.28318530718) - 3.14159265359);
+  float angularDistance = length(vec2(longitudeDelta, latitude));
+  float globeRadius = radians(2.25);
+  float globe = 1.0 - smoothstep(globeRadius, globeRadius + radians(0.08), angularDistance);
+
+  vec2 local = vec2(longitudeDelta, latitude) / globeRadius;
+  float latitudeGrid = 1.0 - smoothstep(0.025, 0.06, abs(sin(local.y * 7.0)));
+  float longitudeGrid = 1.0 - smoothstep(0.025, 0.06, abs(sin(local.x * 6.0)));
+  float land = smoothstep(0.15, 0.78, sin(local.x * 5.2 + local.y * 2.4) + sin(local.y * 7.0 - local.x * 1.7));
+  return clamp(globe + (latitudeGrid + longitudeGrid) * globe * 0.28 + land * globe * 0.22, 0.0, 1.0);
+}
+
+float screenOrbitingEarthMask(vec2 point, float aspect, float time) {
+  float orbitAngle = time * 0.0104719755;
+  vec2 center = vec2(sin(orbitAngle) * 0.30, aspect < 0.8 ? 0.24 : 0.0);
+  vec2 local = vec2((point.x - center.x) * aspect, point.y - center.y);
+  float radius = 0.034;
+  float globe = 1.0 - smoothstep(radius, radius + 0.012, length(local));
+  float latitudeGrid = 1.0 - smoothstep(0.035, 0.08, abs(sin(local.y / radius * 7.0)));
+  float longitudeGrid = 1.0 - smoothstep(0.035, 0.08, abs(sin(local.x / radius * 6.0)));
+  float land = smoothstep(0.25, 0.72,
+    sin(local.x / radius * 3.2 + local.y / radius * 1.4) +
+    sin(local.y / radius * 4.4 - local.x / radius * 1.8));
+  return clamp(globe * 0.62 + (latitudeGrid + longitudeGrid) * globe * 0.5 + land * globe * 0.38, 0.0, 1.0);
+}
 
 float sigilField(vec3 ray, float time, float quality) {
   const float maxSigils = 108.0;
@@ -194,26 +303,10 @@ float animatedSigil(vec3 ray, vec2 center, float radius, float time, float phase
   mark += ring(counter, 0.11, 0.003);
   mark += ring(geometry, 0.27, 0.003);
 
-  if (variant < 0.5) {
-    mark += lineSegment(geometry, vec2(0.0, -0.70), vec2(-0.61, 0.43), 0.012);
-    mark += lineSegment(geometry, vec2(-0.61, 0.43), vec2(0.61, 0.43), 0.012);
-    mark += lineSegment(geometry, vec2(0.61, 0.43), vec2(0.0, -0.70), 0.012);
-  } else if (variant < 1.5) {
-    mark += lineSegment(geometry, vec2(-0.52, -0.52), vec2(0.52, 0.52), 0.012);
-    mark += lineSegment(geometry, vec2(0.52, -0.52), vec2(-0.52, 0.52), 0.012);
-    mark += lineSegment(geometry, vec2(-0.48, 0.0), vec2(0.48, 0.0), 0.012);
-  } else if (variant < 2.5) {
-    mark += lineSegment(geometry, vec2(0.0, -0.62), vec2(0.50, 0.0), 0.012);
-    mark += lineSegment(geometry, vec2(0.50, 0.0), vec2(0.0, 0.62), 0.012);
-    mark += lineSegment(geometry, vec2(0.0, 0.62), vec2(-0.50, 0.0), 0.012);
-    mark += lineSegment(geometry, vec2(-0.50, 0.0), vec2(0.0, -0.62), 0.012);
-  } else {
-    mark += lineSegment(geometry, vec2(-0.60, -0.22), vec2(0.0, 0.66), 0.012);
-    mark += lineSegment(geometry, vec2(0.60, -0.22), vec2(0.0, 0.66), 0.012);
-    mark += lineSegment(geometry, vec2(-0.60, -0.22), vec2(0.60, -0.22), 0.012);
-    mark += lineSegment(geometry, vec2(-0.38, 0.08), vec2(0.38, 0.08), 0.010);
-    mark += lineSegment(geometry, vec2(0.0, -0.64), vec2(0.0, 0.56), 0.010);
-  }
+  // Procedural base-shape from the baked sigil-lib atlas: a distinct
+  // branching line-art silhouette per variant, spun with geometry so it
+  // rotates in lockstep with the dashed rings/runes layered around it.
+  mark += sigilAtlasMask(geometry * 1.05, variant) * 0.9;
 
   mark += lineSegment(counter, vec2(-0.68, 0.0), vec2(0.68, 0.0), 0.007);
   mark += lineSegment(counter, vec2(0.0, -0.68), vec2(0.0, 0.68), 0.007);
@@ -289,6 +382,13 @@ void main() {
   float quality = renderTuning.x;
   float ditherScale = renderTuning.y;
   float marks = sigilField(ray, time, quality);
+  float haloBand = haloRune(ray, time);
+  float earth = max(orbitingEarthMask(ray, time), screenOrbitingEarthMask(screenPosition, aspect, time));
+  marks = clamp(marks + haloBand, 0.0, 1.0);
+  float haloV = clamp(asin(clamp(ray.y, -1.0, 1.0)) / radians(2.5) * 0.5 + 0.5, 0.0, 1.0);
+  vec3 haloDeep = vec3(0.02, 0.42, 0.62);
+  vec3 haloBright = vec3(0.55, 0.98, 1.0);
+  vec3 haloColor = mix(haloDeep, haloBright, haloV) * haloBand;
   float markGlow = smoothstep(0.35, 2.7, marks);
   marks = clamp(marks, 0.0, 1.0);
 
@@ -323,6 +423,11 @@ void main() {
   color += vec3(0.1, 0.03, 0.14) * marks * 0.3;
   color += vec3(0.06, 0.09, 0.15) * nebula * 0.2;
   color += vec3(0.08, 0.05, 0.18) * markGlow * 0.14;
+  color += haloColor * 0.9;
+  vec3 earthColor = mix(vec3(0.005, 0.025, 0.08), vec3(0.02, 0.42, 0.32),
+    0.5 + 0.5 * sin(ray.x * 4.0 + ray.y * 3.0 + time * 0.01));
+  color = mix(color, earthColor, earth);
+  color += vec3(0.28, 1.0, 0.88) * earth * 0.9;
   gl_FragColor = vec4(color, 1.0);
 }`;
 
@@ -343,6 +448,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     alpha: false,
     antialias: false,
     depth: false,
+    preserveDrawingBuffer: true,
     powerPreference: 'low-power'
   });
   if (!context || typeof context.createShader !== 'function') return null;
@@ -366,7 +472,8 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
 
   const buffer = gl.createBuffer();
   const texture = gl.createTexture();
-  if (!buffer || !texture) {
+  const sigilAtlasTexture = gl.createTexture();
+  if (!buffer || !texture || !sigilAtlasTexture) {
     gl.deleteProgram(program);
     return null;
   }
@@ -386,13 +493,35 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([7, 9, 9, 255]));
 
+  const sigilAtlasCount = 6;
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, sigilAtlasTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+  try {
+    const atlas = renderSigilAtlas({ count: sigilAtlasCount, cellSize: 256 });
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas.canvas);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  } catch {
+    // Leave the 1x1 transparent placeholder if atlas generation fails.
+  }
+  gl.activeTexture(gl.TEXTURE0);
+
   const panoramaLocation = gl.getUniformLocation(program, 'panorama');
+  const sigilAtlasLocation = gl.getUniformLocation(program, 'sigilAtlas');
+  const sigilAtlasCountLocation = gl.getUniformLocation(program, 'sigilAtlasCount');
   const viewportLocation = gl.getUniformLocation(program, 'viewport');
   const viewLocation = gl.getUniformLocation(program, 'viewAngles');
   const timeLocation = gl.getUniformLocation(program, 'elapsedTime');
   const renderTuningLocation = gl.getUniformLocation(program, 'renderTuning');
   const horizonDebugLocation = gl.getUniformLocation(program, 'horizonDebug');
   if (panoramaLocation) gl.uniform1i(panoramaLocation, 0);
+  if (sigilAtlasLocation) gl.uniform1i(sigilAtlasLocation, 1);
+  if (sigilAtlasCountLocation) gl.uniform1f(sigilAtlasCountLocation, sigilAtlasCount);
 
   let yaw = 0;
   let pitch = 0;
@@ -463,6 +592,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
       disposed = true;
       image.onload = null;
       gl.deleteTexture(texture);
+      gl.deleteTexture(sigilAtlasTexture);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     }

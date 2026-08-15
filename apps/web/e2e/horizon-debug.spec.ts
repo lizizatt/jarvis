@@ -21,8 +21,10 @@ type OrientationSample = { alpha: number; beta: number; gamma: number };
 // sweep and treat subsequent samples as relative deltas from it.
 const BASELINE: OrientationSample = { alpha: 0, beta: 90, gamma: 0 };
 
-// 20-degree increments spanning +/-40 degrees from the baseline.
-const SWEEP_STEPS = [-40, -20, 0, 20, 40];
+// 10-degree increments spanning +/-20 degrees so the horizon stays in-frame
+// with the shader's 62-degree vertical field of view.
+const SWEEP_STEPS = [-20, -10, 0, 10, 20];
+const COMBINED_SWEEP_STEPS = [-10, -5, 0, 5, 10];
 
 async function dispatchOrientation(page: Page, sample: OrientationSample) {
   await page.evaluate((s) => {
@@ -105,6 +107,10 @@ test.describe('virtual window horizon debug shader', () => {
 
   test('roll sweep tilts the horizon so left and right edges diverge', async ({ page }, testInfo) => {
     await gotoDebugWindow(page);
+    await dispatchOrientation(page, BASELINE);
+    await settle(page);
+    const [neutralLeft, neutralRight] = await sampleHorizonRows(page, [0.05, 0.95]);
+    const neutralTilt = neutralRight - neutralLeft;
 
     const tilts: number[] = [];
     for (const stepIndex of SWEEP_STEPS) {
@@ -118,11 +124,10 @@ test.describe('virtual window horizon debug shader', () => {
     // At zero roll the horizon should be level (left/right rows close);
     // increasing |roll| should widen the left/right gap monotonically away
     // from that flat point.
-    const zeroIndex = SWEEP_STEPS.indexOf(0);
-    expect(Math.abs(tilts[zeroIndex])).toBeLessThan(6);
+    expect(Math.abs(neutralTilt)).toBeLessThan(6);
     const magnitudes = tilts.map(Math.abs);
-    expect(magnitudes[0]).toBeGreaterThan(magnitudes[zeroIndex]);
-    expect(magnitudes[magnitudes.length - 1]).toBeGreaterThan(magnitudes[zeroIndex]);
+    expect(magnitudes[0]).toBeGreaterThan(Math.abs(neutralTilt));
+    expect(magnitudes[magnitudes.length - 1]).toBeGreaterThan(Math.abs(neutralTilt));
   });
 
   test('yaw sweep leaves a level horizon unchanged', async ({ page }, testInfo) => {
@@ -147,7 +152,7 @@ test.describe('virtual window horizon debug shader', () => {
     await gotoDebugWindow(page);
 
     const samples: { left: number; center: number; right: number }[] = [];
-    for (const stepIndex of SWEEP_STEPS) {
+    for (const stepIndex of COMBINED_SWEEP_STEPS) {
       await dispatchOrientation(page, {
         alpha: BASELINE.alpha + stepIndex,
         beta: BASELINE.beta + stepIndex,
@@ -164,7 +169,7 @@ test.describe('virtual window horizon debug shader', () => {
     const distinctCenters = new Set(centers);
     expect(distinctCenters.size).toBeGreaterThan(1);
 
-    const zeroIndex = SWEEP_STEPS.indexOf(0);
+    const zeroIndex = COMBINED_SWEEP_STEPS.indexOf(0);
     const zeroTilt = Math.abs(samples[zeroIndex].right - samples[zeroIndex].left);
     const extremeTilt = Math.abs(samples[samples.length - 1].right - samples[samples.length - 1].left);
     expect(extremeTilt).toBeGreaterThan(zeroTilt);
