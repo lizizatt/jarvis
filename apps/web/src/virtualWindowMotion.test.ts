@@ -1,5 +1,7 @@
 import {
   applyDeadZone,
+  earthOrbitPhaseSeconds,
+  EARTH_ORBIT_PERIOD_SECONDS,
   motionFromRelativeQuaternion,
   multiplyQuaternions,
   normalizeQuaternion,
@@ -11,6 +13,13 @@ import {
   rotateVector,
   unwrapAngleRadians
 } from './virtualWindowMotion';
+
+test('derives the earth orbit from wall-clock time and acceleration', () => {
+  expect(earthOrbitPhaseSeconds(0)).toBe(0);
+  expect(earthOrbitPhaseSeconds(EARTH_ORBIT_PERIOD_SECONDS * 1000)).toBe(0);
+  expect(earthOrbitPhaseSeconds(125_000, 2)).toBeCloseTo(250, 6);
+  expect(earthOrbitPhaseSeconds(125_000, 2)).not.toBe(earthOrbitPhaseSeconds(0));
+});
 
 test('keeps neutral motion at zero when orientation matches reference', () => {
   const reference = orientationToQuaternion({ alpha: 0, beta: 0, gamma: 0, screenOrientationAngle: 0 });

@@ -1,7 +1,7 @@
 import { renderSigilAtlas } from 'sigil-lib';
 
 export type VirtualWindowRenderer = {
-  setView(yaw: number, pitch: number, timeSeconds?: number, roll?: number): void;
+  setView(yaw: number, pitch: number, timeSeconds?: number, roll?: number, orbitTimeSeconds?: number): void;
   setHorizonDebug(enabled: boolean): void;
   resize(): void;
   dispose(): void;
@@ -26,6 +26,7 @@ uniform float sigilAtlasCount;
 uniform vec2 viewport;
 uniform vec3 viewAngles;
 uniform float elapsedTime;
+uniform float orbitTime;
 uniform vec2 renderTuning;
 uniform float horizonDebug;
 
@@ -383,7 +384,7 @@ void main() {
   float ditherScale = renderTuning.y;
   float marks = sigilField(ray, time, quality);
   float haloBand = haloRune(ray, time);
-  float earth = max(orbitingEarthMask(ray, time), screenOrbitingEarthMask(screenPosition, aspect, time));
+  float earth = max(orbitingEarthMask(ray, orbitTime), screenOrbitingEarthMask(screenPosition, aspect, orbitTime));
   marks = clamp(marks + haloBand, 0.0, 1.0);
   float haloV = clamp(asin(clamp(ray.y, -1.0, 1.0)) / radians(2.5) * 0.5 + 0.5, 0.0, 1.0);
   vec3 haloDeep = vec3(0.02, 0.42, 0.62);
@@ -517,6 +518,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   const viewportLocation = gl.getUniformLocation(program, 'viewport');
   const viewLocation = gl.getUniformLocation(program, 'viewAngles');
   const timeLocation = gl.getUniformLocation(program, 'elapsedTime');
+  const orbitTimeLocation = gl.getUniformLocation(program, 'orbitTime');
   const renderTuningLocation = gl.getUniformLocation(program, 'renderTuning');
   const horizonDebugLocation = gl.getUniformLocation(program, 'horizonDebug');
   if (panoramaLocation) gl.uniform1i(panoramaLocation, 0);
@@ -527,6 +529,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   let pitch = 0;
   let roll = 0;
   let elapsedTime = 0;
+  let orbitTime = 0;
   let horizonDebug = false;
   let disposed = false;
   let imageReady = false;
@@ -556,6 +559,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     gl.uniform2f(viewportLocation, canvas.width, canvas.height);
     gl.uniform3f(viewLocation, yaw, pitch, roll);
     gl.uniform1f(timeLocation, elapsedTime);
+    if (orbitTimeLocation) gl.uniform1f(orbitTimeLocation, orbitTime);
     if (horizonDebugLocation) gl.uniform1f(horizonDebugLocation, horizonDebug ? 1 : 0);
     if (renderTuningLocation) gl.uniform2f(renderTuningLocation, sigilQuality, ditherScale);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -576,11 +580,12 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   draw();
 
   return {
-    setView(nextYaw, nextPitch, nextTime = 0, nextRoll = 0) {
+    setView(nextYaw, nextPitch, nextTime = 0, nextRoll = 0, nextOrbitTime = 0) {
       yaw = nextYaw;
       pitch = nextPitch;
       roll = nextRoll;
       elapsedTime = nextTime;
+      orbitTime = nextOrbitTime;
       draw();
     },
     setHorizonDebug(enabled) {

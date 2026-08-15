@@ -36,6 +36,17 @@ export type RelativeAngles = {
   yaw: number;
 };
 
+export const EARTH_ORBIT_PERIOD_SECONDS = 600;
+export const DEFAULT_EARTH_ORBIT_ACCELERATION = 1;
+
+export function earthOrbitPhaseSeconds(
+  nowMilliseconds = Date.now(),
+  acceleration = DEFAULT_EARTH_ORBIT_ACCELERATION
+) {
+  const elapsedSeconds = nowMilliseconds / 1000 * acceleration;
+  return ((elapsedSeconds % EARTH_ORBIT_PERIOD_SECONDS) + EARTH_ORBIT_PERIOD_SECONDS) % EARTH_ORBIT_PERIOD_SECONDS;
+}
+
 export type AxisInversion = boolean | {
   pitch?: boolean;
   yaw?: boolean;

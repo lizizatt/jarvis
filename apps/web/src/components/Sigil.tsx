@@ -18,11 +18,14 @@ import {
   relativeQuaternion,
   relativeQuaternionToWindowAngles,
   unwrapAngleRadians,
+  DEFAULT_EARTH_ORBIT_ACCELERATION,
+  earthOrbitPhaseSeconds,
   type Quaternion
 } from '../virtualWindowMotion';
 import { createVirtualWindowRenderer } from '../virtualWindowRenderer';
 
 const STARMAP_URL = '/media/starmap_2020_4k.png';
+const MAX_EARTH_ORBIT_ACCELERATION = 120;
 
 function readHorizonDebugFlag() {
   if (typeof window === 'undefined') return false;
@@ -31,6 +34,13 @@ function readHorizonDebugFlag() {
   } catch {
     return false;
   }
+}
+
+function readEarthOrbitAcceleration() {
+  if (typeof window === 'undefined') return DEFAULT_EARTH_ORBIT_ACCELERATION;
+  const value = Number(new URLSearchParams(window.location.search).get('earthOrbitAcceleration'));
+  if (!Number.isFinite(value)) return DEFAULT_EARTH_ORBIT_ACCELERATION;
+  return clamp(value, 0, MAX_EARTH_ORBIT_ACCELERATION);
 }
 
 export function AmbientSigil() {
@@ -43,6 +53,7 @@ export function AmbientSigil() {
     if (!hostEl || !canvas || typeof window === 'undefined') return;
     const renderer = createVirtualWindowRenderer(canvas, STARMAP_URL);
     const horizonDebug = readHorizonDebugFlag();
+    const earthOrbitAcceleration = readEarthOrbitAcceleration();
 
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
     const target = { x: 0, y: 0 };
@@ -71,7 +82,8 @@ export function AmbientSigil() {
       // Stars and sigils share spherical UV coordinates, so both remain behind
       // the window and track the same full-surround view.
       const elapsedSeconds = animationStartTime === null ? 0 : (time - animationStartTime) / 1000;
-      renderer?.setView(currentPan.x, currentPan.y, reducedMotion ? 0 : elapsedSeconds, currentRoll);
+      const earthOrbitPhase = earthOrbitPhaseSeconds(Date.now(), earthOrbitAcceleration);
+      renderer?.setView(currentPan.x, currentPan.y, reducedMotion ? 0 : elapsedSeconds, currentRoll, earthOrbitPhase);
     }
 
     function screenOrientationAngle() {

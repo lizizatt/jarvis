@@ -49,6 +49,7 @@ test('moves the virtual window on the first tilt after calibration', () => {
     expect.any(Number),
     expect.any(Number),
     expect.any(Number),
+    expect.any(Number),
     expect.any(Number)
   );
   const [yaw, pitch] = setView.mock.calls.at(-1)!;

@@ -34,9 +34,9 @@ The first pass targets the ring in `haloRune`:
 - outer and inner rails establish distance
 - regularly spaced short and long ticks establish scale
 - a narrow center channel carries the orbital marker
-- the earth marker completes one longitude orbit every 600 seconds
+- the earth marker completes one longitude orbit every 600 wall-clock seconds by default
 
-The timing is encoded in the shader as `time * 0.0104719755`, which is $2\pi / 600$. A still capture cannot prove the full period, so the subagent must inspect that expression or use a browser time probe.
+The Earth phase is derived from `Date.now()` and reduced modulo 600 seconds before it reaches WebGL, so a page reload does not reset the marker. The default acceleration is `1x`; use `?earthOrbitAcceleration=12` for a faster twelve-times demonstration. The shader uses `orbitTime * 0.0104719755`, which is $2\pi / 600$. A still capture cannot prove the full period, so the subagent must inspect the phase helper or use a browser time probe.
 
 ## Review standard
 
