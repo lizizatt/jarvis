@@ -178,28 +178,37 @@ float orbitingEarthMask(vec3 ray, float time) {
   float latitude = asin(clamp(ray.y, -1.0, 1.0));
   float longitudeDelta = abs(mod(longitude - orbitAngle + 3.14159265359, 6.28318530718) - 3.14159265359);
   float angularDistance = length(vec2(longitudeDelta, latitude));
-  float globeRadius = radians(2.25);
-  float globe = 1.0 - smoothstep(globeRadius, globeRadius + radians(0.08), angularDistance);
-
-  vec2 local = vec2(longitudeDelta, latitude) / globeRadius;
-  float latitudeGrid = 1.0 - smoothstep(0.025, 0.06, abs(sin(local.y * 7.0)));
-  float longitudeGrid = 1.0 - smoothstep(0.025, 0.06, abs(sin(local.x * 6.0)));
-  float land = smoothstep(0.15, 0.78, sin(local.x * 5.2 + local.y * 2.4) + sin(local.y * 7.0 - local.x * 1.7));
-  return clamp(globe + (latitudeGrid + longitudeGrid) * globe * 0.28 + land * globe * 0.22, 0.0, 1.0);
+  float globeRadius = radians(0.625);
+  return 1.0 - smoothstep(globeRadius, globeRadius + radians(0.08), angularDistance);
 }
 
-float screenOrbitingEarthMask(vec2 point, float aspect, float time) {
+vec3 orbitingEarthColor(vec3 ray, float time) {
   float orbitAngle = time * 0.0104719755;
-  vec2 center = vec2(sin(orbitAngle) * 0.30, aspect < 0.8 ? 0.24 : 0.0);
-  vec2 local = vec2((point.x - center.x) * aspect, point.y - center.y);
-  float radius = 0.034;
-  float globe = 1.0 - smoothstep(radius, radius + 0.012, length(local));
-  float latitudeGrid = 1.0 - smoothstep(0.035, 0.08, abs(sin(local.y / radius * 7.0)));
-  float longitudeGrid = 1.0 - smoothstep(0.035, 0.08, abs(sin(local.x / radius * 6.0)));
-  float land = smoothstep(0.25, 0.72,
-    sin(local.x / radius * 3.2 + local.y / radius * 1.4) +
-    sin(local.y / radius * 4.4 - local.x / radius * 1.8));
-  return clamp(globe * 0.62 + (latitudeGrid + longitudeGrid) * globe * 0.5 + land * globe * 0.38, 0.0, 1.0);
+  float longitude = atan(ray.x, -ray.z);
+  float latitude = asin(clamp(ray.y, -1.0, 1.0));
+  float longitudeDelta = mod(longitude - orbitAngle + 3.14159265359, 6.28318530718) - 3.14159265359;
+  float globeRadius = radians(0.625);
+  vec2 local = vec2(longitudeDelta, latitude) / globeRadius;
+  float surfaceSq = dot(local, local);
+  float sphereDepth = sqrt(max(0.0, 1.0 - surfaceSq));
+  vec3 normal = normalize(vec3(local.x, local.y, sphereDepth));
+  vec3 lightDirection = normalize(vec3(-0.96, 0.16, 0.08));
+  float illumination = dot(normal, lightDirection);
+  float daylight = smoothstep(0.02, 0.22, illumination);
+  float twilight = smoothstep(-0.10, 0.10, illumination) * (1.0 - daylight);
+  float land = smoothstep(0.18, 0.62,
+    sin(local.x * 4.6 + local.y * 1.9) +
+    sin(local.y * 6.2 - local.x * 2.1) +
+    sin(local.x * 2.0 - local.y * 5.0));
+  vec3 ocean = vec3(0.008, 0.06, 0.16);
+  vec3 landColor = vec3(0.12, 0.48, 0.26);
+  vec3 nightColor = vec3(0.002, 0.008, 0.025);
+  vec3 dayColor = mix(ocean, landColor, land);
+  vec3 surfaceColor = mix(nightColor, dayColor, daylight);
+  surfaceColor += vec3(0.015, 0.08, 0.15) * twilight;
+  float fresnel = pow(1.0 - sphereDepth, 2.4);
+  surfaceColor += vec3(0.08, 0.48, 0.66) * fresnel * (0.72 + daylight * 0.28);
+  return surfaceColor;
 }
 
 float sigilField(vec3 ray, float time, float quality) {
@@ -384,7 +393,7 @@ void main() {
   float ditherScale = renderTuning.y;
   float marks = sigilField(ray, time, quality);
   float haloBand = haloRune(ray, time);
-  float earth = max(orbitingEarthMask(ray, orbitTime), screenOrbitingEarthMask(screenPosition, aspect, orbitTime));
+  float earth = orbitingEarthMask(ray, orbitTime);
   marks = clamp(marks + haloBand, 0.0, 1.0);
   float haloV = clamp(asin(clamp(ray.y, -1.0, 1.0)) / radians(2.5) * 0.5 + 0.5, 0.0, 1.0);
   vec3 haloDeep = vec3(0.02, 0.42, 0.62);
@@ -425,10 +434,9 @@ void main() {
   color += vec3(0.06, 0.09, 0.15) * nebula * 0.2;
   color += vec3(0.08, 0.05, 0.18) * markGlow * 0.14;
   color += haloColor * 0.9;
-  vec3 earthColor = mix(vec3(0.005, 0.025, 0.08), vec3(0.02, 0.42, 0.32),
-    0.5 + 0.5 * sin(ray.x * 4.0 + ray.y * 3.0 + time * 0.01));
+  vec3 earthColor = orbitingEarthColor(ray, orbitTime);
   color = mix(color, earthColor, earth);
-  color += vec3(0.28, 1.0, 0.88) * earth * 0.9;
+  color += vec3(0.07, 0.38, 0.48) * earth;
   gl_FragColor = vec4(color, 1.0);
 }`;
 
