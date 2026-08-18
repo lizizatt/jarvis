@@ -1,5 +1,11 @@
+type DevicePermissionResult = 'granted' | 'denied';
+
 type DeviceOrientationWithPermission = typeof DeviceOrientationEvent & {
-  requestPermission?: () => Promise<'granted' | 'denied'>;
+  requestPermission?: () => Promise<DevicePermissionResult>;
+};
+
+type DeviceMotionWithPermission = typeof DeviceMotionEvent & {
+  requestPermission?: () => Promise<DevicePermissionResult>;
 };
 
 export type MotionPermissionState = 'granted' | 'denied' | 'prompt' | 'unsupported';
@@ -11,6 +17,18 @@ const MOTION_PERMISSION_KEY = 'jarvis.motionPermission.state';
 function orientationType() {
   if (typeof window === 'undefined') return undefined;
   return window.DeviceOrientationEvent as DeviceOrientationWithPermission | undefined;
+}
+
+function motionType() {
+  if (typeof window === 'undefined') return undefined;
+  return window.DeviceMotionEvent as DeviceMotionWithPermission | undefined;
+}
+
+function permissionApis() {
+  const orientation = orientationType();
+  const motion = motionType();
+  return [orientation?.requestPermission, motion?.requestPermission]
+    .filter((requestPermission): requestPermission is () => Promise<DevicePermissionResult> => typeof requestPermission === 'function');
 }
 
 function readStoredPermissionState(): Exclude<MotionPermissionState, 'prompt'> | undefined {
@@ -34,9 +52,8 @@ function storePermissionState(state: Exclude<MotionPermissionState, 'prompt'>) {
 }
 
 export function getMotionPermissionState(): MotionPermissionState {
-  const orientation = orientationType();
-  if (!orientation) return 'unsupported';
-  if (typeof orientation.requestPermission === 'function') {
+  if (!orientationType()) return 'unsupported';
+  if (permissionApis().length > 0) {
     const stored = readStoredPermissionState();
     return stored ?? 'prompt';
   }
@@ -44,16 +61,22 @@ export function getMotionPermissionState(): MotionPermissionState {
 }
 
 export async function requestMotionPermission(): Promise<Exclude<MotionPermissionState, 'prompt'>> {
-  const orientation = orientationType();
-  if (!orientation) {
+  if (!orientationType()) {
     storePermissionState('unsupported');
     return 'unsupported';
   }
-  if (typeof orientation.requestPermission === 'function') {
+  const requesters = permissionApis();
+  if (requesters.length > 0) {
     try {
-      const permission = await orientation.requestPermission();
-      storePermissionState(permission);
-      return permission;
+      for (const requestPermission of requesters) {
+        const permission = await requestPermission();
+        if (permission !== 'granted') {
+          storePermissionState(permission);
+          return permission;
+        }
+      }
+      storePermissionState('granted');
+      return 'granted';
     } catch {
       storePermissionState('denied');
       return 'denied';

@@ -15,6 +15,9 @@ const externalBase = process.env.PLAYWRIGHT_BASE_URL;
 const baseUrl = externalBase ?? `http://127.0.0.1:${port}`;
 const outputDir = path.resolve('test-results', 'digital-window', iteration);
 const referenceDir = path.resolve('docs/design/look-and-feel-library');
+const deviceScaleFactor = Number(process.env.DIGITAL_WINDOW_DEVICE_SCALE ?? 0.75);
+const rendererReadyTimeout = Number(process.env.DIGITAL_WINDOW_RENDERER_TIMEOUT_MS ?? 30_000);
+const captureMode = process.env.DIGITAL_WINDOW_CAPTURE ?? 'canvas';
 const viewports = {
   desktop: { width: 1440, height: 900 },
   mobile: { width: 390, height: 844 }
@@ -50,24 +53,49 @@ async function waitForHealth() {
 }
 
 async function capture(browser, name, viewport) {
-  const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
+  const startedAt = Date.now();
+  const page = await browser.newPage({ viewport, deviceScaleFactor });
+  const requestFailures = [];
+  page.on('requestfailed', (request) => {
+    requestFailures.push(`${request.url()}: ${request.failure()?.errorText ?? 'unknown error'}`);
+  });
   try {
+    console.log(`[harness] ${phase}/${name}: navigating`);
     await page.goto(`${baseUrl}/?digitalWindowHarness=${encodeURIComponent(iteration)}`, {
       waitUntil: 'domcontentloaded'
     });
     await page.waitForTimeout(1_500);
-    const rendererReady = await page.evaluate(async () => {
-      const deadline = Date.now() + 90_000;
+    const rendererReady = await page.evaluate(async (timeoutMs) => {
+      const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
         if (document.querySelector('.virtual-window-canvas')?.dataset.ready === 'true') return true;
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       return false;
-    });
-    if (!rendererReady) throw new Error('Timed out waiting for the digital window renderer.');
+    }, rendererReadyTimeout);
+    if (!rendererReady) {
+      const canvasSize = await page.evaluate(() => {
+        const canvas = document.querySelector('.virtual-window-canvas');
+        return canvas ? `${canvas.width}x${canvas.height}` : 'missing';
+      }).catch(() => 'page-unavailable');
+      throw new Error(`Timed out waiting for the digital window renderer after ${rendererReadyTimeout}ms (canvas ${canvasSize}; request failures: ${requestFailures.join('; ') || 'none'}).`);
+    }
+    console.log(`[harness] ${phase}/${name}: renderer ready after ${Date.now() - startedAt}ms`);
     await page.waitForTimeout(1_200);
     const outputPath = path.join(outputDir, `${phase}-${name}.png`);
-    await page.screenshot({ path: outputPath, timeout: 60_000 });
+    if (captureMode === 'canvas') {
+      const dataUrl = await page.evaluate(() => {
+        const canvas = document.querySelector('.virtual-window-canvas');
+        return canvas?.toDataURL('image/png') ?? null;
+      });
+      if (!dataUrl?.startsWith('data:image/png;base64,')) throw new Error('Digital window canvas could not be encoded.');
+      await fs.writeFile(outputPath, Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64'));
+    } else if (captureMode === 'viewport') {
+      await page.screenshot({ path: outputPath, timeout: 30_000 });
+    } else {
+      throw new Error(`Unknown DIGITAL_WINDOW_CAPTURE mode "${captureMode}". Use canvas or viewport.`);
+    }
+    console.log(`[harness] ${phase}/${name}: screenshot complete after ${Date.now() - startedAt}ms`);
     return outputPath;
   } finally {
     await page.close();
@@ -125,5 +153,17 @@ Reply with exactly one status: SATISFIED only when there is no material mismatch
   }
   console.log(`${phase} screenshots written to ${path.relative(root, outputDir)}`);
 } finally {
-  server?.kill('SIGTERM');
+  if (server && server.exitCode === null) {
+    await new Promise((resolve) => {
+      const cleanupTimer = setTimeout(() => {
+        server.kill('SIGKILL');
+        resolve();
+      }, 5_000);
+      server.once('exit', () => {
+        clearTimeout(cleanupTimer);
+        resolve();
+      });
+      server.kill('SIGTERM');
+    });
+  }
 }
