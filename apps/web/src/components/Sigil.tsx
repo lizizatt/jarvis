@@ -20,12 +20,14 @@ import {
   unwrapAngleRadians,
   DEFAULT_EARTH_ORBIT_ACCELERATION,
   earthOrbitPhaseSeconds,
+  gravityToWindowAngles,
   type Quaternion
 } from '../virtualWindowMotion';
 import { createVirtualWindowRenderer } from '../virtualWindowRenderer';
 
 const STARMAP_URL = '/media/starmap_2020_4k.png';
 const MAX_EARTH_ORBIT_ACCELERATION = 120;
+const MOTION_SMOOTHING_TIME_MS = 20;
 
 function readHorizonDebugFlag() {
   if (typeof window === 'undefined') return false;
@@ -67,10 +69,12 @@ export function AmbientSigil() {
     let frame = 0;
     let frameInterval = 1000 / getSigilFrameRate();
     let lastDrawTime = -Infinity;
+    let lastAnimationTime: number | null = null;
     let animationStartTime: number | null = null;
     let orientationActive = false;
     let referenceQuaternion: Quaternion | null = null;
     let referenceAngles: { pitch: number; yaw: number } | null = null;
+    let gravityAngles: { pitch: number; roll: number } | null = null;
     let unwrappedPitch = 0;
     let unwrappedYaw = 0;
     let currentRoll = 0;
@@ -134,8 +138,8 @@ export function AmbientSigil() {
         target.y = applyDeadZone(clamp(motion.y, -1, 1));
 
         targetPan.x = relativeUnwrapped.yaw;
-        targetPan.y = clamp(relativeUnwrapped.pitch, -Math.PI / 2, Math.PI / 2);
-        targetRoll = windowAngles.roll + gamma * Math.PI / 180;
+        targetPan.y = gravityAngles?.pitch ?? clamp(relativeUnwrapped.pitch, -Math.PI / 2, Math.PI / 2);
+        targetRoll = gravityAngles?.roll ?? windowAngles.roll + gamma * Math.PI / 180;
       }
       lastSensorUpdate = performance.now();
     }
@@ -145,9 +149,25 @@ export function AmbientSigil() {
       readOrientation(event.alpha, event.beta, event.gamma);
     };
 
+    const onMotion = (event: DeviceMotionEvent) => {
+      const gravity = event.accelerationIncludingGravity;
+      if (!gravity || typeof gravity.x !== 'number' || typeof gravity.y !== 'number' || typeof gravity.z !== 'number') return;
+      gravityAngles = gravityToWindowAngles([
+        gravity.x,
+        gravity.y,
+        gravity.z
+      ], screenOrientationAngle());
+      if (referenceQuaternion) {
+        targetPan.y = gravityAngles.pitch;
+        targetRoll = gravityAngles.roll;
+      }
+      lastSensorUpdate = performance.now();
+    };
+
     function ensureOrientationListener() {
       if (orientationActive) return;
       window.addEventListener('deviceorientation', onOrientation, { passive: true });
+      window.addEventListener('devicemotion', onMotion, { passive: true });
       orientationActive = true;
     }
 
@@ -185,6 +205,7 @@ export function AmbientSigil() {
         target.x = 0;
         target.y = 0;
         targetRoll = 0;
+        gravityAngles = null;
       }).catch(() => undefined);
     };
 
@@ -202,6 +223,7 @@ export function AmbientSigil() {
         targetPan.x = 0;
         targetPan.y = 0;
         targetRoll = 0;
+        gravityAngles = null;
         referenceQuaternion = null;
         referenceAngles = null;
         unwrappedPitch = 0;
@@ -224,6 +246,8 @@ export function AmbientSigil() {
     const animate = (time: number) => {
       if (disposed) return;
       if (animationStartTime === null) animationStartTime = time;
+      const deltaMs = lastAnimationTime === null ? 1000 / 60 : Math.min(time - lastAnimationTime, 100);
+      lastAnimationTime = time;
       const sensorFresh = motionEnabled && time - lastSensorUpdate < 1200;
       if (!motionEnabled) {
         target.x = 0;
@@ -237,7 +261,11 @@ export function AmbientSigil() {
         targetPan.x = Math.sin(time * 0.00006) * 0.05 * driftFactor;
         targetPan.y = Math.cos(time * 0.00005) * 0.03 * driftFactor;
       }
-      const blend = reducedMotion ? 0.025 : sensorFresh ? 0.22 : pointerActive ? 0.1 : 0.045;
+      const blend = reducedMotion
+        ? 0.025
+        : sensorFresh
+          ? 1 - Math.exp(-Math.max(0, deltaMs) / MOTION_SMOOTHING_TIME_MS)
+          : pointerActive ? 0.1 : 0.045;
       current.x += (target.x - current.x) * blend;
       current.y += (target.y - current.y) * blend;
       currentPan.x += (targetPan.x - currentPan.x) * blend;
@@ -263,6 +291,7 @@ export function AmbientSigil() {
       disposed = true;
       window.cancelAnimationFrame(frame);
       if (orientationActive) window.removeEventListener('deviceorientation', onOrientation);
+      if (orientationActive) window.removeEventListener('devicemotion', onMotion);
       window.removeEventListener('pointerdown', requestFromGesture);
       window.removeEventListener('pointermove', onPointerMove);
       document.documentElement.removeEventListener('pointerleave', onPointerLeave);

@@ -22,6 +22,7 @@ precision mediump float;
 varying vec2 screenPosition;
 uniform sampler2D panorama;
 uniform sampler2D sigilAtlas;
+uniform sampler2D earthAlbedo;
 uniform float sigilAtlasCount;
 uniform vec2 viewport;
 uniform vec3 viewAngles;
@@ -93,6 +94,32 @@ vec2 hash22(vec2 value) {
     hash21(value + vec2(1.0, 0.0)),
     hash21(value + vec2(0.0, 1.0))
   );
+}
+
+float hash31(vec3 value) {
+  return fract(sin(dot(value, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+}
+
+float earthNoise3(vec3 point) {
+  vec3 cell = floor(point);
+  vec3 local = fract(point);
+  local = local * local * (3.0 - 2.0 * local);
+  float c000 = hash31(cell);
+  float c100 = hash31(cell + vec3(1.0, 0.0, 0.0));
+  float c010 = hash31(cell + vec3(0.0, 1.0, 0.0));
+  float c110 = hash31(cell + vec3(1.0, 1.0, 0.0));
+  float c001 = hash31(cell + vec3(0.0, 0.0, 1.0));
+  float c101 = hash31(cell + vec3(1.0, 0.0, 1.0));
+  float c011 = hash31(cell + vec3(0.0, 1.0, 1.0));
+  float c111 = hash31(cell + vec3(1.0, 1.0, 1.0));
+  float low = mix(mix(c000, c100, local.x), mix(c010, c110, local.x), local.y);
+  float high = mix(mix(c001, c101, local.x), mix(c011, c111, local.x), local.y);
+  return mix(low, high, local.z);
+}
+
+float earthFractalNoise(vec3 point) {
+  return earthNoise3(point) * 0.58 + earthNoise3(point * 2.1 + vec3(4.2, 1.7, 8.3)) * 0.28 +
+    earthNoise3(point * 4.3 + vec3(2.1, 7.4, 3.6)) * 0.14;
 }
 
 float animatedSigil(vec3 ray, vec2 center, float radius, float time, float phase, float variant);
@@ -178,7 +205,7 @@ float orbitingEarthMask(vec3 ray, float time) {
   float latitude = asin(clamp(ray.y, -1.0, 1.0));
   float longitudeDelta = abs(mod(longitude - orbitAngle + 3.14159265359, 6.28318530718) - 3.14159265359);
   float angularDistance = length(vec2(longitudeDelta, latitude));
-  float globeRadius = radians(0.625);
+  float globeRadius = radians(2.3);
   return 1.0 - smoothstep(globeRadius, globeRadius + radians(0.08), angularDistance);
 }
 
@@ -187,23 +214,35 @@ vec3 orbitingEarthColor(vec3 ray, float time) {
   float longitude = atan(ray.x, -ray.z);
   float latitude = asin(clamp(ray.y, -1.0, 1.0));
   float longitudeDelta = mod(longitude - orbitAngle + 3.14159265359, 6.28318530718) - 3.14159265359;
-  float globeRadius = radians(0.625);
+  float globeRadius = radians(2.3);
   vec2 local = vec2(longitudeDelta, latitude) / globeRadius;
   float surfaceSq = dot(local, local);
   float sphereDepth = sqrt(max(0.0, 1.0 - surfaceSq));
   vec3 normal = normalize(vec3(local.x, local.y, sphereDepth));
-  vec3 lightDirection = normalize(vec3(-0.96, 0.16, 0.08));
+  vec3 lightDirection = normalize(vec3(-0.42, 0.25, 0.87));
   float illumination = dot(normal, lightDirection);
-  float daylight = smoothstep(0.02, 0.22, illumination);
-  float twilight = smoothstep(-0.10, 0.10, illumination) * (1.0 - daylight);
-  float land = smoothstep(0.18, 0.62,
-    sin(local.x * 4.6 + local.y * 1.9) +
-    sin(local.y * 6.2 - local.x * 2.1) +
-    sin(local.x * 2.0 - local.y * 5.0));
-  vec3 ocean = vec3(0.008, 0.06, 0.16);
-  vec3 landColor = vec3(0.12, 0.48, 0.26);
-  vec3 nightColor = vec3(0.002, 0.008, 0.025);
-  vec3 dayColor = mix(ocean, landColor, land);
+  float daylight = smoothstep(-0.08, 0.28, illumination);
+  float twilight = smoothstep(-0.18, 0.08, illumination) * (1.0 - daylight);
+  float northAmerica = 1.0 - smoothstep(0.2, 0.58,
+    length(vec2((normal.x + 0.28) * 1.15, (normal.y - 0.22) * 1.4)));
+  float southAmerica = 1.0 - smoothstep(0.12, 0.48,
+    length(vec2((normal.x + 0.02) * 1.1, (normal.y + 0.28) * 1.8)));
+  float afroEurasia = 1.0 - smoothstep(0.24, 0.66,
+    length(vec2((normal.x - 0.34) * 1.0, (normal.y - 0.05) * 1.25)));
+  float continentShape = max(northAmerica, max(southAmerica, afroEurasia));
+  float coastlineNoise = earthFractalNoise(normal * 5.0 + vec3(3.0, 1.0, 4.0)) - 0.5;
+  float land = smoothstep(0.26, 0.62, continentShape + coastlineNoise * 0.22);
+  float cloudNoise = earthFractalNoise(normal * 7.0 + vec3(9.0, 2.0, 6.0));
+  float cloudBands = smoothstep(0.62, 0.78, cloudNoise) * smoothstep(0.1, 0.92, sphereDepth);
+  vec2 albedoUv = vec2(
+    atan(normal.x, normal.z) / 6.28318530718 + 0.10,
+    asin(clamp(normal.y, -1.0, 1.0)) / 3.14159265359 + 0.5
+  );
+  vec3 albedo = pow(texture2D(earthAlbedo, albedoUv).rgb, vec3(0.78));
+  vec3 cloudColor = vec3(0.88, 0.96, 1.0);
+  vec3 nightColor = vec3(0.004, 0.018, 0.055);
+  vec3 dayColor = albedo * (1.08 + daylight * 0.58);
+  dayColor = mix(dayColor, cloudColor, cloudBands * 0.82);
   vec3 surfaceColor = mix(nightColor, dayColor, daylight);
   surfaceColor += vec3(0.015, 0.08, 0.15) * twilight;
   float fresnel = pow(1.0 - sphereDepth, 2.4);
@@ -436,7 +475,7 @@ void main() {
   color += haloColor * 0.9;
   vec3 earthColor = orbitingEarthColor(ray, orbitTime);
   color = mix(color, earthColor, earth);
-  color += vec3(0.07, 0.38, 0.48) * earth;
+  color += vec3(0.01, 0.05, 0.08) * earth;
   gl_FragColor = vec4(color, 1.0);
 }`;
 
@@ -482,7 +521,8 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   const buffer = gl.createBuffer();
   const texture = gl.createTexture();
   const sigilAtlasTexture = gl.createTexture();
-  if (!buffer || !texture || !sigilAtlasTexture) {
+  const earthTexture = gl.createTexture();
+  if (!buffer || !texture || !sigilAtlasTexture || !earthTexture) {
     gl.deleteProgram(program);
     return null;
   }
@@ -520,8 +560,18 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   }
   gl.activeTexture(gl.TEXTURE0);
 
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, earthTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([8, 30, 70, 255]));
+  gl.activeTexture(gl.TEXTURE0);
+
   const panoramaLocation = gl.getUniformLocation(program, 'panorama');
   const sigilAtlasLocation = gl.getUniformLocation(program, 'sigilAtlas');
+  const earthAlbedoLocation = gl.getUniformLocation(program, 'earthAlbedo');
   const sigilAtlasCountLocation = gl.getUniformLocation(program, 'sigilAtlasCount');
   const viewportLocation = gl.getUniformLocation(program, 'viewport');
   const viewLocation = gl.getUniformLocation(program, 'viewAngles');
@@ -531,6 +581,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   const horizonDebugLocation = gl.getUniformLocation(program, 'horizonDebug');
   if (panoramaLocation) gl.uniform1i(panoramaLocation, 0);
   if (sigilAtlasLocation) gl.uniform1i(sigilAtlasLocation, 1);
+  if (earthAlbedoLocation) gl.uniform1i(earthAlbedoLocation, 2);
   if (sigilAtlasCountLocation) gl.uniform1f(sigilAtlasCountLocation, sigilAtlasCount);
 
   let yaw = 0;
@@ -541,6 +592,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
   let horizonDebug = false;
   let disposed = false;
   let imageReady = false;
+  let earthReady = false;
 
   function resize() {
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -571,7 +623,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     if (horizonDebugLocation) gl.uniform1f(horizonDebugLocation, horizonDebug ? 1 : 0);
     if (renderTuningLocation) gl.uniform2f(renderTuningLocation, sigilQuality, ditherScale);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
-    if (imageReady) canvas.dataset.ready = 'true';
+    if (imageReady && earthReady) canvas.dataset.ready = 'true';
   }
 
   const image = new Image();
@@ -585,6 +637,20 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     draw();
   };
   image.src = imageUrl;
+
+  const earthImage = new Image();
+  earthImage.decoding = 'async';
+  earthImage.onload = () => {
+    if (disposed) return;
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, earthTexture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, earthImage);
+    earthReady = true;
+    gl.activeTexture(gl.TEXTURE0);
+    draw();
+  };
+  earthImage.src = '/media/earth-blue-marble.png';
   draw();
 
   return {
@@ -604,8 +670,10 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     dispose() {
       disposed = true;
       image.onload = null;
+      earthImage.onload = null;
       gl.deleteTexture(texture);
       gl.deleteTexture(sigilAtlasTexture);
+      gl.deleteTexture(earthTexture);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     }

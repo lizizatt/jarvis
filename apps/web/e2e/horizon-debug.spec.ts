@@ -5,14 +5,11 @@ import { expect, test, type Page } from '@playwright/test';
 // reviewer can confirm pitch, roll, and yaw drive the horizon the way phone
 // orientation sensors would in the field, without needing real hardware.
 //
-// Playwright has no built-in "device orientation" emulator (unlike geolocation
-// or permissions), so this mocks it directly: dispatch synthetic
-// `deviceorientation` events with chosen alpha/beta/gamma and let the app's
-// existing orientation pipeline (motion.ts + virtualWindowMotion.ts) do the
-// rest. Chromium exposes `DeviceOrientationEvent` without a permission
-// prompt, so no extra grant step is required for these projects.
+// Playwright has no built-in device orientation or motion emulator, so this
+// mocks both events directly and lets the app's sensor pipeline combine them.
 
 type OrientationSample = { alpha: number; beta: number; gamma: number };
+type GravitySample = { x: number; y: number; z: number };
 
 // A phone held upright, screen facing the user, is beta=90/gamma=0 in the
 // DeviceOrientationControls convention this app follows (see
@@ -32,6 +29,25 @@ async function dispatchOrientation(page: Page, sample: OrientationSample) {
     Object.defineProperty(event, 'alpha', { value: s.alpha, configurable: true });
     Object.defineProperty(event, 'beta', { value: s.beta, configurable: true });
     Object.defineProperty(event, 'gamma', { value: s.gamma, configurable: true });
+    window.dispatchEvent(event);
+  }, sample);
+}
+
+function gravityForTilt(pitchDegrees: number, rollDegrees: number): GravitySample {
+  const pitch = pitchDegrees * Math.PI / 180;
+  const roll = rollDegrees * Math.PI / 180;
+  const magnitude = 9.8;
+  return {
+    x: Math.sin(roll) * Math.cos(pitch) * magnitude,
+    y: -Math.cos(roll) * Math.cos(pitch) * magnitude,
+    z: Math.sin(pitch) * magnitude
+  };
+}
+
+async function dispatchGravity(page: Page, sample: GravitySample) {
+  await page.evaluate((s) => {
+    const event = new Event('devicemotion') as DeviceMotionEvent;
+    Object.defineProperty(event, 'accelerationIncludingGravity', { value: s, configurable: true });
     window.dispatchEvent(event);
   }, sample);
 }
@@ -76,6 +92,7 @@ async function gotoDebugWindow(page: Page) {
   await expect(page.locator('.virtual-window-canvas')).toBeVisible();
   // Establish the zero-orientation reference before any sweep begins.
   await dispatchOrientation(page, BASELINE);
+  await dispatchGravity(page, gravityForTilt(0, 0));
   await settle(page);
 }
 
@@ -86,6 +103,7 @@ test.describe('virtual window horizon debug shader', () => {
     const centerRows: number[] = [];
     for (const stepIndex of SWEEP_STEPS) {
       await dispatchOrientation(page, { ...BASELINE, beta: BASELINE.beta + stepIndex });
+      await dispatchGravity(page, gravityForTilt(stepIndex, 0));
       await settle(page);
       const [center] = await sampleHorizonRows(page, [0.5]);
       centerRows.push(center);
@@ -93,9 +111,8 @@ test.describe('virtual window horizon debug shader', () => {
     }
 
     expect(centerRows.every((row) => row >= 0)).toBe(true);
-    // 20-degree pitch increments should move the horizon monotonically; two
-    // consecutive samples must never land on the same row once the sweep
-    // has covered a full 160-degree range in 20-degree steps.
+    // Ten-degree pitch increments should move the horizon monotonically; two
+    // consecutive samples must never land on the same row across this sweep.
     const distinctRows = new Set(centerRows);
     expect(distinctRows.size).toBeGreaterThan(1);
     const isMonotonic = centerRows.every((row, index) => index === 0 || row !== centerRows[index - 1]);
@@ -103,6 +120,18 @@ test.describe('virtual window horizon debug shader', () => {
     const ascending = centerRows.every((row, index) => index === 0 || row >= centerRows[index - 1]);
     const descending = centerRows.every((row, index) => index === 0 || row <= centerRows[index - 1]);
     expect(ascending || descending).toBe(true);
+  });
+
+  test('gravity moves the horizon even when orientation stays fixed', async ({ page }) => {
+    await gotoDebugWindow(page);
+    const [level] = await sampleHorizonRows(page, [0.5]);
+    await dispatchGravity(page, gravityForTilt(15, 0));
+    await settle(page);
+    const [gravityTilted] = await sampleHorizonRows(page, [0.5]);
+
+    expect(level).toBeGreaterThanOrEqual(0);
+    expect(gravityTilted).toBeGreaterThanOrEqual(0);
+    expect(Math.abs(gravityTilted - level)).toBeGreaterThan(8);
   });
 
   test('roll sweep tilts the horizon so left and right edges diverge', async ({ page }, testInfo) => {
@@ -115,6 +144,7 @@ test.describe('virtual window horizon debug shader', () => {
     const tilts: number[] = [];
     for (const stepIndex of SWEEP_STEPS) {
       await dispatchOrientation(page, { ...BASELINE, gamma: BASELINE.gamma + stepIndex });
+      await dispatchGravity(page, gravityForTilt(0, stepIndex));
       await settle(page);
       const [left, right] = await sampleHorizonRows(page, [0.05, 0.95]);
       tilts.push(right - left);
@@ -136,6 +166,7 @@ test.describe('virtual window horizon debug shader', () => {
     const centerRows: number[] = [];
     for (const stepIndex of SWEEP_STEPS) {
       await dispatchOrientation(page, { ...BASELINE, alpha: BASELINE.alpha + stepIndex });
+      await dispatchGravity(page, gravityForTilt(0, 0));
       await settle(page);
       const [left, center, right] = await sampleHorizonRows(page, [0.05, 0.5, 0.95]);
       centerRows.push(center);
@@ -158,6 +189,7 @@ test.describe('virtual window horizon debug shader', () => {
         beta: BASELINE.beta + stepIndex,
         gamma: BASELINE.gamma + stepIndex
       });
+      await dispatchGravity(page, gravityForTilt(stepIndex, stepIndex));
       await settle(page);
       const [left, center, right] = await sampleHorizonRows(page, [0.05, 0.5, 0.95]);
       samples.push({ left, center, right });

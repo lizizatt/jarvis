@@ -36,6 +36,11 @@ export type RelativeAngles = {
   yaw: number;
 };
 
+export type GravityAngles = {
+  pitch: number;
+  roll: number;
+};
+
 export const EARTH_ORBIT_PERIOD_SECONDS = 600;
 export const DEFAULT_EARTH_ORBIT_ACCELERATION = 1;
 
@@ -58,6 +63,23 @@ export function clamp(value: number, min: number, max: number) {
 
 export function applyDeadZone(value: number, threshold = 0.01) {
   return Math.abs(value) < threshold ? 0 : value;
+}
+
+export function gravityToWindowAngles(gravity: Vector3, screenOrientationAngle = 0): GravityAngles {
+  const [x, y, z] = gravity;
+  if (Math.hypot(x, y, z) < 0.0001) return { pitch: 0, roll: 0 };
+
+  const screenAngle = toRadians(screenOrientationAngle);
+  const screenCos = Math.cos(screenAngle);
+  const screenSin = Math.sin(screenAngle);
+  const screenX = x * screenCos + y * screenSin;
+  const screenY = -x * screenSin + y * screenCos;
+  const pitch = Math.atan2(z, -screenY);
+  const roll = Math.atan2(screenX, -screenY);
+  return {
+    pitch: Number.isFinite(pitch) ? pitch : 0,
+    roll: Number.isFinite(roll) ? roll : 0
+  };
 }
 
 export function wrapAngleRadians(angle: number) {

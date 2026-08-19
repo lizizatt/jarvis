@@ -2,6 +2,7 @@ import {
   applyDeadZone,
   earthOrbitPhaseSeconds,
   EARTH_ORBIT_PERIOD_SECONDS,
+  gravityToWindowAngles,
   motionFromRelativeQuaternion,
   multiplyQuaternions,
   normalizeQuaternion,
@@ -19,6 +20,19 @@ test('derives the earth orbit from wall-clock time and acceleration', () => {
   expect(earthOrbitPhaseSeconds(EARTH_ORBIT_PERIOD_SECONDS * 1000)).toBe(0);
   expect(earthOrbitPhaseSeconds(125_000, 2)).toBeCloseTo(250, 6);
   expect(earthOrbitPhaseSeconds(125_000, 2)).not.toBe(earthOrbitPhaseSeconds(0));
+});
+
+test('derives horizon pitch and roll from gravity, independent of yaw', () => {
+  const neutral = gravityToWindowAngles([0, -9.8, 0]);
+  const pitched = gravityToWindowAngles([0, -9.8 * Math.cos(Math.PI / 6), 9.8 * Math.sin(Math.PI / 6)]);
+  const rolled = gravityToWindowAngles([9.8 * Math.sin(Math.PI / 6), -9.8 * Math.cos(Math.PI / 6), 0]);
+  const yawed = gravityToWindowAngles([0, -9.8, 0]);
+
+  expect(neutral.pitch).toBeCloseTo(0, 6);
+  expect(neutral.roll).toBeCloseTo(0, 6);
+  expect(pitched.pitch).toBeCloseTo(Math.PI / 6, 6);
+  expect(rolled.roll).toBeCloseTo(Math.PI / 6, 6);
+  expect(yawed).toEqual(neutral);
 });
 
 test('keeps neutral motion at zero when orientation matches reference', () => {
