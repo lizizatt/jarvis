@@ -91,7 +91,6 @@ def controls_in(frame, atspi):
 
 
 def find_window(atspi, window_name):
-    expected = re.compile(rf"(?:^| - ){re.escape(window_name)} - Visual Studio Code$", re.IGNORECASE)
     desktop = atspi.get_desktop(0)
     pending = [desktop]
     visited = 0
@@ -99,7 +98,7 @@ def find_window(atspi, window_name):
         accessible = pending.pop()
         visited += 1
         try:
-            if accessible.get_role() == atspi.Role.FRAME and expected.search(accessible_name(accessible)):
+            if accessible.get_role() == atspi.Role.FRAME and window_title_matches(accessible_name(accessible), [window_name]):
                 return accessible
             for index in range(accessible.get_child_count()):
                 child = accessible.get_child_at_index(index)
@@ -110,6 +109,14 @@ def find_window(atspi, window_name):
     return None
 
 
+def window_title_matches(title, names):
+    if not isinstance(title, str) or not isinstance(names, list):
+        return False
+    parts = [part.strip().casefold() for part in title.split(" - ")]
+    normalized = [str(name).strip().casefold() for name in names if str(name).strip()]
+    return any(name in parts for name in normalized)
+
+
 def monitor(window_name):
     import gi
 
@@ -117,9 +124,15 @@ def monitor(window_name):
     from gi.repository import Atspi
 
     Atspi.init()
+    try:
+        window_names = json.loads(window_name)
+    except (TypeError, json.JSONDecodeError):
+        window_names = [window_name]
+    if not isinstance(window_names, list):
+        window_names = [window_name]
     previous = None
     while True:
-        frame = find_window(Atspi, window_name)
+        frame = find_window(Atspi, window_names)
         activity = classify(controls_in(frame, Atspi)) if frame else "idle"
         if activity != previous:
             print(activity, flush=True)
@@ -130,10 +143,15 @@ def monitor(window_name):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--classify")
+    parser.add_argument("--match-window")
     parser.add_argument("--window")
     args = parser.parse_args()
     if args.classify is not None:
         print(classify(json.loads(args.classify)))
+        return
+    if args.match_window is not None:
+        value = json.loads(args.match_window)
+        print(str(window_title_matches(value.get("title"), value.get("names"))).lower())
         return
     if not args.window:
         parser.error("--window is required")

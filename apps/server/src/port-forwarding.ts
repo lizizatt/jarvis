@@ -25,7 +25,7 @@ export class PortForwarder {
   async close(port: number): Promise<void> {
     validatePort(port);
     await execFileAsync(this.executable, [
-      'serve', '--yes', `--https=${port}`, `http://127.0.0.1:${port}`, 'off',
+      'serve', '--yes', `--https=${port}`, 'off',
     ], EXEC_OPTIONS);
   }
 

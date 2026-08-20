@@ -10,13 +10,14 @@ export class NativeChatActivityMonitor implements vscode.Disposable {
 
 	constructor(private readonly context: vscode.ExtensionContext) {}
 
-	start(windowName: string, onDidChange: (activity: WorkerActivity) => void,
+	start(windowNames: string | string[], onDidChange: (activity: WorkerActivity) => void,
 		onError?: (error: Error) => void): void {
 		if (process.platform !== 'linux' || this.child || this.disposed) {
 			return;
 		}
 		const script = this.context.asAbsolutePath('resources/native_chat_activity.py');
-		const child = spawn('/usr/bin/python3', ['-u', script, '--window', windowName]);
+		const names = typeof windowNames === 'string' ? [windowNames] : windowNames;
+		const child = spawn('/usr/bin/python3', ['-u', script, '--window', JSON.stringify(names)]);
 		this.child = child;
 		child.stdout.setEncoding('utf8');
 		child.stdout.on('data', (chunk: string) => {

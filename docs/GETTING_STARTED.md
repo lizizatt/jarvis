@@ -25,7 +25,7 @@ bash deploy/systemd/install.sh
 
 The worker install creates an ignored VSIX, installs it locally, and leaves the artifact under `apps/vscode-worker`. Do not commit it.
 
-The systemd installer builds Jarvis, creates `~/.config/jarvis/.env` on first use, and enables both user services. It does not install or reload the VS Code extension.
+The systemd installer builds Jarvis, creates `~/.config/jarvis/.env` on first use, and enables the Jarvis, terminal-host, and Jam Assistant user services. It does not install or reload the VS Code extension.
 
 ## Connect a Checkout
 
@@ -59,8 +59,9 @@ Open the resulting HTTPS URL on the phone and install the PWA. See [PWA Mobile S
 ## Verify
 
 ```bash
-systemctl --user is-active jarvis jarvis-terminal-host
+systemctl --user is-active jarvis jarvis-terminal-host jarvis-jam-assistant
 curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:4173/
 curl -fsS http://127.0.0.1:3210/api/workers
 code --list-extensions --show-versions | grep jarvis-local.jarvis-copilot-worker
 ```

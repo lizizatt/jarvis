@@ -90,7 +90,7 @@ printf '%s\\n' "$*" >> "${calls}"
 
     const closed = await app.inject({ method: 'DELETE', url: '/api/settings/port-forwards/8080' });
     expect(closed.statusCode).toBe(204);
-    expect(await readFile(calls, 'utf8')).toBe('serve --yes --https=8080 http://127.0.0.1:8080 off\n');
+    expect(await readFile(calls, 'utf8')).toBe('serve --yes --https=8080 off\n');
   });
 
   it('lists currently exposed ports by reading live Tailscale Serve state', async () => {

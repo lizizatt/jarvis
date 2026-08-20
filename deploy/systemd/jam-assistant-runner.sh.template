@@ -1,0 +1,60 @@
+#!/bin/sh
+set -eu
+
+host="${JARVIS_JAM_ASSISTANT_HOST:-127.0.0.1}"
+port="${JARVIS_JAM_ASSISTANT_PORT:-4173}"
+tailscale_port="${JARVIS_JAM_ASSISTANT_TAILSCALE_PORT:-4173}"
+root="${JARVIS_JAM_ASSISTANT_ROOT:-@@JAM_ASSISTANT_ROOT@@}"
+tailscale="${JARVIS_TAILSCALE_EXECUTABLE:-@@TAILSCALE_EXECUTABLE@@}"
+vite_pid=''
+
+cd "$root"
+
+clear_serve_mapping() {
+  output=''
+  if output=$("$tailscale" serve --yes --https="$tailscale_port" off 2>&1); then
+    return 0
+  fi
+  case "$output" in
+    *'handler does not exist'*) return 0 ;;
+    *) echo "Unable to clear Tailscale Serve HTTPS port $tailscale_port: $output" >&2; return 1 ;;
+  esac
+}
+
+cleanup() {
+  status=$?
+  trap - EXIT INT TERM
+  if [ -n "$vite_pid" ]; then
+    kill -TERM "$vite_pid" >/dev/null 2>&1 || true
+    wait "$vite_pid" >/dev/null 2>&1 || true
+  fi
+  clear_serve_mapping
+  exit "$status"
+}
+trap cleanup EXIT INT TERM
+
+# Remove a stale listener before Vite starts; --strictPort must never fall back.
+clear_serve_mapping
+npm run dev -- --host "$host" --port "$port" --strictPort &
+vite_pid=$!
+
+ready=''
+for attempt in $(seq 1 60); do
+  if ! kill -0 "$vite_pid" >/dev/null 2>&1; then
+    wait "$vite_pid"
+    exit 1
+  fi
+  if curl --fail --silent --show-error --max-time 1 "http://$host:$port/" >/dev/null 2>&1; then
+    ready=true
+    break
+  fi
+  sleep 1
+done
+if [ -z "$ready" ]; then
+  echo "Jam Assistant did not become ready on http://$host:$port" >&2
+  exit 1
+fi
+
+# Only this HTTPS port is managed here. The existing Jarvis 443 mapping is untouched.
+"$tailscale" serve --yes --https="$tailscale_port" "http://$host:$port"
+wait "$vite_pid"

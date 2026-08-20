@@ -17,9 +17,19 @@ suite('native chat activity', () => {
 			{ role: 'text', name: 'Stop', ancestors: ['Chat'] },
 		]), 'idle');
 	});
+	test('matches workspace names as exact title segments', async () => {
+		assert.strictEqual(await matchesWindow('README.md - saildrone - Visual Studio Code', ['saildrone']), 'true');
+		assert.strictEqual(await matchesWindow('saildrone-2 - Visual Studio Code', ['saildrone']), 'false');
+		assert.strictEqual(await matchesWindow('saildrone-2 - Visual Studio Code', ['saildrone-2']), 'true');
+	});
 });
 
 async function classify(controls: Array<{ role: string; name: string; ancestors: string[] }>): Promise<string> {
 	const result = await execFileAsync('/usr/bin/python3', [script, '--classify', JSON.stringify(controls)]);
+	return result.stdout.trim();
+}
+
+async function matchesWindow(title: string, names: string[]): Promise<string> {
+	const result = await execFileAsync('/usr/bin/python3', [script, '--match-window', JSON.stringify({ title, names })]);
 	return result.stdout.trim();
 }

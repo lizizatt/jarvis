@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
+import { basename } from 'node:path';
 import * as vscode from 'vscode';
 import { runAgentTurn } from './agent';
 import { NativeChatActivityMonitor } from './nativeChatActivity';
@@ -356,7 +357,8 @@ export class WorkerClient implements vscode.Disposable {
 			});
 			return;
 		}
-		this.nativeChatActivityMonitor.start(vscode.workspace.name ?? vscode.env.appName, activity => {
+		const windowNames = [vscode.workspace.name ?? vscode.env.appName, ...this.workspaceRoots.map(root => basename(root))];
+		this.nativeChatActivityMonitor.start(windowNames, activity => {
 			this.nativeChatActivity = activity;
 			this.sendHello();
 		}, error => {

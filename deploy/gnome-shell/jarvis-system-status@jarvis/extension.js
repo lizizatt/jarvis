@@ -200,11 +200,13 @@ export default class JarvisSystemStatusExtension extends Extension {
   }
 
   _focusWorker(worker) {
-    const name = worker.windowName.toLocaleLowerCase();
+    const names = [worker.windowName, ...(worker.workspaceRoots ?? []).map((root) => root.split('/').pop())]
+      .filter((value) => typeof value === 'string' && value.trim())
+      .map((value) => value.trim().toLocaleLowerCase());
     const window = global.get_window_actors()
       .map((actor) => actor.meta_window)
       .filter((candidate) => candidate?.get_wm_class()?.toLocaleLowerCase().includes('code'))
-      .find((candidate) => candidate.get_title()?.toLocaleLowerCase().includes(name));
+      .find((candidate) => windowTitleMatches(candidate.get_title(), names));
     if (window) {
       Main.activateWindow(window);
       return;
@@ -222,4 +224,10 @@ export default class JarvisSystemStatusExtension extends Extension {
     if (!this._sessionFlags.has(workerId)) this._sessionFlags.set(workerId, SESSION_FLAGS[this._sessionFlags.size % SESSION_FLAGS.length]);
     return this._sessionFlags.get(workerId);
   }
+}
+
+function windowTitleMatches(title, names) {
+  if (typeof title !== 'string' || !Array.isArray(names)) return false;
+  const parts = title.split(' - ').map((part) => part.trim().toLocaleLowerCase());
+  return names.some((name) => parts.includes(name));
 }

@@ -17,6 +17,10 @@ The systemd services load `~/.config/jarvis/.env`. For foreground development, e
 | `JARVIS_WEB_ROOT` | `apps/web/dist` | Built PWA assets served by the server. |
 | `JARVIS_TERMINAL_HOST_SCRIPT` | built server terminal host | Override only for a custom distribution. |
 | `JARVIS_TAILSCALE_EXECUTABLE` | `tailscale` | Executable used by General settings to expose local ports to the Tailnet. |
+| `JARVIS_JAM_ASSISTANT_ROOT` | `~/scratch-2/jam_assistant` | Jam Assistant checkout supervised by `jarvis-jam-assistant`. |
+| `JARVIS_JAM_ASSISTANT_HOST` | `127.0.0.1` | Local-only Jam Assistant bind address. |
+| `JARVIS_JAM_ASSISTANT_PORT` | `4173` | Local Jam Assistant Vite port. Strictly enforced; Vite never falls back to another port. |
+| `JARVIS_JAM_ASSISTANT_TAILSCALE_PORT` | `4173` | Tailnet-only HTTPS Serve port managed by the Jam Assistant service. |
 | `JARVIS_MAX_JSON_LINE_BYTES` | `1048576` | Maximum JSON-encoded task event size. |
 | `JARVIS_MAX_STDERR_CHUNK_BYTES` | `65536` | Maximum buffered agent stderr chunk. |
 
@@ -52,6 +56,8 @@ tailscale serve --bg http://127.0.0.1:3210
 ```
 
 This supplies HTTPS required by PWA installation and Web Push. A LAN bind needs a separate trusted TLS reverse proxy. Never publish Jarvis to the public Internet: it exposes repository content and a shell running as the desktop user.
+
+The installer also supervises Jam Assistant at `http://127.0.0.1:4173` and configures the private Tailscale Serve endpoint `https://<tailnet-host>:4173/`. It changes only the 4173 Serve mapping; the existing Jarvis HTTPS mapping on port 443 remains untouched. It never enables Tailscale Funnel.
 
 ## Apply Changes
 

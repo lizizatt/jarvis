@@ -1,0 +1,26 @@
+[Unit]
+Description=Jarvis Jam Assistant and private Tailscale Serve endpoint
+Documentation=file://@@JAM_ASSISTANT_ROOT@@/README.md
+Wants=network-online.target
+After=network-online.target tailscaled.service
+ConditionUser=!root
+PartOf=jarvis.service
+
+[Service]
+Type=simple
+WorkingDirectory=@@JAM_ASSISTANT_ROOT@@
+Environment="JARVIS_JAM_ASSISTANT_ROOT=@@JAM_ASSISTANT_ROOT@@"
+Environment="JARVIS_JAM_ASSISTANT_HOST=127.0.0.1"
+Environment="JARVIS_JAM_ASSISTANT_PORT=4173"
+Environment="JARVIS_JAM_ASSISTANT_TAILSCALE_PORT=4173"
+Environment="JARVIS_TAILSCALE_EXECUTABLE=@@TAILSCALE_EXECUTABLE@@"
+EnvironmentFile=-%h/.config/jarvis/.env
+ExecStart=@@JAM_RUNNER@@
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

@@ -19,10 +19,11 @@ deploy/systemd      Per-user service installer and unit templates
 tools               Repository registration and smoke-test utilities
 ```
 
-Production uses two user services:
+Production uses three user services:
 
 - `jarvis.service` serves the API and built PWA.
 - `jarvis-terminal-host.service` owns persistent PTY sessions.
+- `jarvis-jam-assistant.service` runs the Jam Assistant Vite server on localhost:4173 and manages its private Tailscale Serve endpoint.
 
 ## Start Here
 
@@ -70,8 +71,9 @@ Open that checkout in its own VS Code window and run **Jarvis: Connect Copilot W
 ## Health
 
 ```bash
-systemctl --user is-active jarvis jarvis-terminal-host
+systemctl --user is-active jarvis jarvis-terminal-host jarvis-jam-assistant
 curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:4173/
 curl -fsS http://127.0.0.1:3210/api/workers
 ```
 

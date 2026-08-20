@@ -40,7 +40,7 @@ printf '%s\\n' "$*" >> "${calls}"
     await chmod(executable, 0o700);
 
     await new PortForwarder(executable).close(8080);
-    expect(await readFile(calls, 'utf8')).toBe('serve --yes --https=8080 http://127.0.0.1:8080 off\n');
+    expect(await readFile(calls, 'utf8')).toBe('serve --yes --https=8080 off\n');
   });
 
   it('lists self-mapped forwards while excluding the primary Jarvis binding', async () => {
