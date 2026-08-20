@@ -24,6 +24,22 @@ test('shows repository state and immediately marks a stopped task as stopping', 
   expect(fetchMock).toHaveBeenLastCalledWith('/api/tasks/task-1/stop', expect.objectContaining({ method: 'POST' }));
 });
 
+test('shows Pull for a clean repository and reports success', async () => {
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/repositories') return Promise.resolve(new Response(JSON.stringify([{ id: 'repo-1', name: 'Flight controls', path: '/src/flight' }])));
+    if (url === '/api/repositories/repo-1/status') return Promise.resolve(new Response(JSON.stringify({ branch: 'main', dirty: false, clean: true, ahead: 0, behind: 0 })));
+    if (url === '/api/repositories/repo-1/pull' && init?.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ ok: true, branch: 'main', message: 'Already up to date.' })));
+    return Promise.resolve(new Response('{}'));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  expect(await screen.findByText('Flight controls')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Pull' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Pulled main from origin');
+  expect(fetchMock).toHaveBeenCalledWith('/api/repositories/repo-1/pull', expect.objectContaining({ method: 'POST' }));
+});
+
 test('keeps repository registration on the server', async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([])));
   vi.stubGlobal('fetch', fetchMock);

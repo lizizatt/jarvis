@@ -51,7 +51,8 @@ function repository(value: Repository | WireRepositoryStatus): Repository {
   if (activeTask && latest) activeTask.latestAction = latest.summary ?? latest.text ?? latest.command ?? latest.toolName;
   return {
     ...value.repository,
-    status: value.git ? { branch: value.git.branch ?? 'detached', dirty: value.git.isDirty ?? false, ahead: value.git.ahead ?? 0, behind: value.git.behind ?? 0 } : undefined,
+    status: value.git ? { branch: value.git.branch ?? 'detached', dirty: value.git.isDirty ?? false,
+      clean: !(value.git.isDirty ?? false), ahead: value.git.ahead ?? 0, behind: value.git.behind ?? 0 } : undefined,
     activeTask
   };
 }
@@ -74,9 +75,10 @@ export const api = {
     catch { return normalized; }
   },
   status: async (id: string) => {
-    const value = await request<{ branch?: string | null; dirty?: boolean; ahead?: number; behind?: number }>(`/api/repositories/${id}/status`);
-    return { branch: value.branch ?? 'detached', dirty: value.dirty ?? false, ahead: value.ahead ?? 0, behind: value.behind ?? 0 } as RepositoryStatus;
+    const value = await request<{ branch?: string | null; dirty?: boolean; clean?: boolean; ahead?: number; behind?: number }>(`/api/repositories/${id}/status`);
+    return { branch: value.branch ?? 'detached', dirty: value.dirty ?? false, clean: value.clean ?? !value.dirty, ahead: value.ahead ?? 0, behind: value.behind ?? 0 } as RepositoryStatus;
   },
+  pull: (id: string) => request<{ ok: true; branch: string; message: string }>(`/api/repositories/${id}/pull`, { method: 'POST' }),
   tasks: async (repositoryId: string) => collection(await request<WireTask[] | { tasks: WireTask[] }>(`/api/repositories/${repositoryId}/tasks`)).map(task),
   models: (repositoryId: string) => request<ModelMetadata[]>(`/api/repositories/${repositoryId}/models`),
   task: async (id: string) => task(unwrap(await request<WireTask | { task: WireTask }>(`/api/tasks/${id}`), 'task')),

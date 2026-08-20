@@ -204,6 +204,31 @@ export class Store {
     return eventsByTaskId;
   }
 
+  listSummaryEventsForTasks(taskIds: string[]): Map<string, TaskEvent[]> {
+    const eventsByTaskId = new Map(taskIds.map((taskId) => [taskId, [] as TaskEvent[]]));
+    if (taskIds.length === 0) return eventsByTaskId;
+    const placeholders = taskIds.map(() => '?').join(',');
+    const rows = this.db.prepare(`
+      WITH summary_sequences AS (
+        SELECT task_id,
+          MIN(CASE WHEN kind = 'user_message' THEN sequence END) AS first_user_sequence,
+          MAX(sequence) AS latest_sequence
+        FROM task_events
+        WHERE task_id IN (${placeholders})
+        GROUP BY task_id
+      )
+      SELECT event.* FROM task_events event
+      JOIN summary_sequences summary ON summary.task_id = event.task_id
+      WHERE event.sequence = summary.first_user_sequence OR event.sequence = summary.latest_sequence
+      ORDER BY event.task_id, event.sequence
+    `).all(...taskIds) as EventRow[];
+    for (const row of rows) {
+      eventsByTaskId.get(row.task_id)!.push({ id: row.id, taskId: row.task_id, sequence: row.sequence,
+        kind: row.kind, payload: JSON.parse(row.payload) as unknown, createdAt: row.created_at });
+    }
+    return eventsByTaskId;
+  }
+
   getSetting(key: string): string | undefined {
     return (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
   }

@@ -21,6 +21,7 @@ export async function repositoryStatus(repositoryPath: string): Promise<unknown>
   ]);
   const recent = hasCommit ? await git(repositoryPath, ['log', '-5', '--pretty=format:%H%x09%h%x09%s%x09%aI']) : '';
   const lines = porcelain.split('\n');
+  const entries = lines.filter((line) => /^[12u?!]/.test(line));
   const branch = lines.find((line) => line.startsWith('# branch.head '))?.slice(14) ?? null;
   const upstream = lines.find((line) => line.startsWith('# branch.upstream '))?.slice(18) ?? null;
   const aheadBehind = lines.find((line) => line.startsWith('# branch.ab '))?.match(/\+(\d+) -(\d+)/);
@@ -30,13 +31,30 @@ export async function repositoryStatus(repositoryPath: string): Promise<unknown>
     ahead: Number(aheadBehind?.[1] ?? 0),
     behind: Number(aheadBehind?.[2] ?? 0),
     // Untracked ('?') and ignored ('!') files don't count as dirty; only tracked changes and conflicts do.
-    dirty: lines.some((line) => /^[12u]/.test(line)),
-    entries: lines.filter((line) => /^[12u?!]/.test(line)),
+    dirty: entries.some((line) => /^[12u]/.test(line)),
+    clean: entries.length === 0,
+    entries,
     recentCommits: recent ? recent.split('\n').map((line) => {
       const [hash, shortHash, subject, authoredAt] = line.split('\t');
       return { hash, shortHash, subject, authoredAt };
     }) : [],
   };
+}
+
+export async function pullOrigin(repositoryPath: string): Promise<{ ok: true; branch: string; message: string }> {
+  const porcelain = await git(repositoryPath, ['status', '--porcelain=v2', '--branch']);
+  const lines = porcelain.split('\n');
+  const entries = lines.filter((line) => /^[12u?!]/.test(line));
+  if (entries.length > 0) throw pullError('Repository must be clean before pulling', 409);
+  const branch = lines.find((line) => line.startsWith('# branch.head '))?.slice(14).trim();
+  if (!branch || branch === '(detached)') throw pullError('Repository must have a current branch before pulling', 409);
+  try {
+    const output = await git(repositoryPath, ['pull', '--ff-only', 'origin', branch]);
+    return { ok: true, branch, message: output.trim() || 'Already up to date.' };
+  } catch (error) {
+    const cause = error as { stderr?: string };
+    throw pullError(cause.stderr?.trim() || 'Git pull failed', 502);
+  }
 }
 
 export async function repositoryDiff(repositoryPath: string, staged: boolean): Promise<string> {
@@ -99,4 +117,8 @@ function firstString(...values: unknown[]): string | undefined {
 
 async function git(repositoryPath: string, args: string[]): Promise<string> {
   return (await execFileAsync('git', ['-C', repositoryPath, ...args], EXEC_OPTIONS)).stdout;
+}
+
+function pullError(message: string, statusCode: number): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode });
 }

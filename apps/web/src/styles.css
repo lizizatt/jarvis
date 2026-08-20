@@ -132,8 +132,10 @@ pre { font-family: 'IBM Plex Mono', monospace; }
 .activity strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity time { color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
 .idle { margin: 15px 0 0; font-size: .77rem; }
-.repo-row > .stop { position: absolute; top: 12px; right: 12px; }
-.repo-row:has(> .stop) .repo-title { padding-right: 85px; }
+.repo-row > .stop, .repo-row > .pull { position: absolute; top: 12px; right: 12px; }
+.repo-row:has(> .stop) .repo-title, .repo-row:has(> .pull) .repo-title { padding-right: 85px; }
+.pull-feedback { position: absolute; top: 61px; right: 12px; color: var(--green); font-size: .7rem; }
+.pull-feedback.error { color: #ff7a7f; }
 
 .status { display: inline-flex; width: fit-content; align-items: center; gap: 5px; color: var(--gold); font-size: .67rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
 .status-running svg, .status-starting svg, .status-stopping svg { animation: pulse 1.4s ease-in-out infinite; }

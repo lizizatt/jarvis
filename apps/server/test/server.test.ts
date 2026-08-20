@@ -154,6 +154,36 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
     expect(files).toEqual([{ status: 'R ', path: 'unstaged.txt -> renamed.txt' }]);
   });
 
+  it('pulls the current branch from origin only when the checkout is clean', async () => {
+    const sandbox = await makeSandbox();
+    const remote = join(sandbox.root, 'remote.git');
+    await git(sandbox.root, ['init', '--bare', remote]);
+    await git(sandbox.repository, ['remote', 'add', 'origin', remote]);
+    await git(sandbox.repository, ['push', '--set-upstream', 'origin', 'main']);
+    const upstream = join(sandbox.root, 'upstream');
+    await execFileAsync('git', ['clone', '--branch', 'main', remote, upstream]);
+    await writeFile(join(upstream, 'from-origin.txt'), 'pulled\n');
+    await git(upstream, ['config', 'user.email', 'fixture@example.test']);
+    await git(upstream, ['config', 'user.name', 'Fixture']);
+    await git(upstream, ['add', 'from-origin.txt']);
+    await git(upstream, ['commit', '-m', 'from origin']);
+    await git(upstream, ['push', 'origin', 'main']);
+
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(app, sandbox.repository);
+    const status = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/status` })).json();
+    expect(status.clean).toBe(true);
+    const pulled = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/pull` });
+    expect(pulled.statusCode).toBe(200);
+    expect(pulled.json()).toMatchObject({ ok: true, branch: 'main' });
+    expect(await readFile(join(sandbox.repository, 'from-origin.txt'), 'utf8')).toBe('pulled\n');
+
+    await writeFile(join(sandbox.repository, 'untracked.txt'), 'local\n');
+    const rejected = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/pull` });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json()).toEqual({ error: 'Repository must be clean before pulling' });
+  });
+
   it('returns an empty status-files listing for a clean checkout', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));
@@ -299,6 +329,28 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
       expect(summary).toMatchObject({ id: expect.any(String), title: 'HANG dashboard batch' });
     } finally {
       Store.prototype.listTasks = listTasks;
+      Store.prototype.listEvents = listEvents;
+    }
+  });
+
+  it('lists task history without loading every event payload', async () => {
+    const sandbox = await makeSandbox();
+    const now = new Date().toISOString();
+    const store = new Store(join(sandbox.dataDir, 'jarvis.sqlite3'));
+    store.insertRepository({ id: 'repo', name: 'Repo', path: sandbox.repository, defaultBranch: 'main', createdAt: now, updatedAt: now });
+    store.insertTask({ id: 'task', repositoryId: 'repo', sessionId: 'session', origin: 'jarvis-pwa', clientConversationId: null,
+      state: 'completed', createdAt: now, updatedAt: now, stoppedBy: null, stoppedAt: null, exitCode: 0, modelId: 'auto' });
+    store.appendEvent('task', 'user_message', { text: 'Recover this history' });
+    store.appendEvent('task', 'lifecycle', { state: 'completed' });
+    store.close();
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    const listEvents = Store.prototype.listEvents;
+    Store.prototype.listEvents = () => { throw new Error('History listing must not load full event payloads'); };
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/repositories/repo/tasks' });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual([expect.objectContaining({ title: 'Recover this history', latestAction: 'completed' })]);
+    } finally {
       Store.prototype.listEvents = listEvents;
     }
   });

@@ -25,6 +25,7 @@ export interface ModelMetadata {
 export interface RepositoryStatus {
   branch: string;
   dirty: boolean;
+  clean: boolean;
   ahead: number;
   behind: number;
 }

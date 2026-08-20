@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { PushSubscription } from 'web-push';
 import { Store } from './database.js';
 import { EventHub } from './events.js';
-import { pullRequest, previewCandidates, repositoryDiff, repositoryStatus, repositoryStatusFiles, validateGitRoot } from './git.js';
+import { pullOrigin, pullRequest, previewCandidates, repositoryDiff, repositoryStatus, repositoryStatusFiles, validateGitRoot } from './git.js';
 import { CopilotUsageFetcher } from './copilot.js';
 import { HostMetricsSampler } from './metrics.js';
 import { ensureLanding, readPreviewFile, rewritePreviewHtml } from './previews.js';
@@ -61,7 +61,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     for (const task of activeTasks) {
       if (!activeTasksByRepository.has(task.repositoryId)) activeTasksByRepository.set(task.repositoryId, task);
     }
-    const eventsByTaskId = store.listEventsForTasks(activeTasks.map((task) => task.id));
+    const eventsByTaskId = store.listSummaryEventsForTasks(activeTasks.map((task) => task.id));
     return store.listRepositories().map((repository) => {
       const activeTask = activeTasksByRepository.get(repository.id);
       return { ...repository, previewUrl: `/previews/${repository.id}`,
@@ -97,6 +97,15 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     return store.deleteRepository(request.params.id) ? reply.code(204).send() : reply.code(404).send({ error: 'Repository not found' });
   });
   app.get<{ Params: IdParams }>('/api/repositories/:id/status', async (request, reply) => withRepository(store, request.params.id, reply, repositoryStatus));
+  app.post<{ Params: IdParams }>('/api/repositories/:id/pull', async (request, reply) => {
+    const repository = store.getRepository(request.params.id);
+    if (!repository) return reply.code(404).send({ error: 'Repository not found' });
+    if (store.listTasks(repository.id).some((task) => ACTIVE_TASK_STATES.includes(task.state))) {
+      return reply.code(409).send({ error: 'Repository has an active task' });
+    }
+    try { return await pullOrigin(repository.path); }
+    catch (error) { return sendKnownError(reply, error); }
+  });
   app.get<{ Params: IdParams; Querystring: { staged?: string } }>('/api/repositories/:id/diff', async (request, reply) =>
     withRepository(store, request.params.id, reply, (path) => repositoryDiff(path, request.query.staged === 'true')));
   app.get<{ Params: IdParams }>('/api/repositories/:id/status-files', async (request, reply) => withRepository(store, request.params.id, reply, repositoryStatusFiles));
@@ -232,7 +241,7 @@ function sendKnownError(reply: FastifyReply, error: unknown): unknown {
 }
 
 function taskSummary(store: Store, task: import('./types.js').Task, loadedEvents?: import('./types.js').TaskEvent[]): import('./types.js').Task & { title?: string; latestAction?: string } {
-  const events = loadedEvents ?? store.listEvents(task.id);
+  const events = loadedEvents ?? store.listSummaryEventsForTasks([task.id]).get(task.id) ?? [];
   const firstMessage = events.find((event) => event.kind === 'user_message');
   const latestAction = [...events].reverse().map(eventAction).find(Boolean);
   return { ...task, title: eventText(firstMessage?.payload), latestAction };
