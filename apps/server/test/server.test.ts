@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,10 +20,12 @@ const fixtureAgent = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/
 const terminalHost = resolve(dirname(fileURLToPath(import.meta.url)), '../src/terminal-host.ts');
 const apps: Awaited<ReturnType<typeof createApp>>[] = [];
 const hostPids: number[] = [];
+const sandboxRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
   for (const pid of hostPids.splice(0)) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+  await Promise.all(sandboxRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe('server MVP', () => {
@@ -773,6 +775,7 @@ describe('GitHub pull request normalization', () => {
 async function makeSandbox(): Promise<{ root: string; dataDir: string; repository: string }> {
   await chmod(fixtureAgent, 0o755);
   const root = await mkdtemp(join(tmpdir(), 'jarvis-server-'));
+  sandboxRoots.push(root);
   const repository = join(root, 'repository');
   const dataDir = join(root, 'data');
   await mkdir(join(repository, 'nested'), { recursive: true });
