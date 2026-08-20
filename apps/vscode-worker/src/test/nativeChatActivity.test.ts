@@ -25,6 +25,16 @@ suite('native chat activity', () => {
 	test('matches the JSON window-name array used by the monitor', async () => {
 		assert.strictEqual(await matchesMonitorWindow('README.md - saildrone - Visual Studio Code', JSON.stringify(['saildrone'])), 'true');
 	});
+	test('observer exits when its parent process exits', async function () {
+		if (process.platform !== 'linux') { this.skip(); return; }
+		const modulePath = JSON.stringify(script);
+		const childCode = `import importlib.util, os, time; spec = importlib.util.spec_from_file_location('native_chat_activity', ${modulePath}); module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.configure_parent_death_signal(); print('ready', flush=True); time.sleep(30)`;
+		const parentCode = "import os, subprocess, sys; os.environ['JARVIS_PARENT_PID'] = str(os.getpid()); child = subprocess.Popen([sys.executable, '-c', sys.argv[1]], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True); assert child.stdout.readline().strip() == 'ready'; print(child.pid, flush=True); os._exit(0)";
+		const result = await execFileAsync('/usr/bin/python3', ['-c', parentCode, childCode]);
+		const childPid = Number(result.stdout.trim());
+		assert.ok(Number.isInteger(childPid) && childPid > 0);
+		await waitFor(async () => !(await processState(childPid)), 2000);
+	});
 });
 
 async function classify(controls: Array<{ role: string; name: string; ancestors: string[] }>): Promise<string> {
@@ -40,4 +50,25 @@ async function matchesWindow(title: string, names: string[]): Promise<string> {
 async function matchesMonitorWindow(title: string, window: string): Promise<string> {
 	const result = await execFileAsync('/usr/bin/python3', [script, '--match-monitor-window', JSON.stringify({ title, window })]);
 	return result.stdout.trim();
+}
+
+async function processState(pid: number): Promise<string | undefined> {
+	try {
+		const result = await execFileAsync('ps', ['-o', 'stat=', '-p', String(pid)]);
+		const state = result.stdout.trim();
+		return state && !state.startsWith('Z') ? state : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function waitFor(predicate: () => Promise<boolean>, timeout: number): Promise<void> {
+	const deadline = Date.now() + timeout;
+	while (Date.now() < deadline) {
+		if (await predicate()) {
+			return;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	throw new Error('Timed out waiting for condition');
 }

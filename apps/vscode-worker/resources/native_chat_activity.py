@@ -15,6 +15,29 @@ NEEDS_INPUT_PREFIXES = ("allow", "approve", "confirm", "continue")
 CHAT_ANCESTOR_PATTERN = re.compile(r"(?:^|\b)(?:agent|chat|copilot)(?:\b|$)", re.IGNORECASE)
 
 
+def configure_parent_death_signal():
+    if sys.platform != "linux":
+        return
+    import ctypes
+    import os
+    import signal
+
+    expected_parent = os.environ.get("JARVIS_PARENT_PID")
+    try:
+        expected_parent_pid = int(expected_parent) if expected_parent else os.getppid()
+    except ValueError:
+        expected_parent_pid = os.getppid()
+    libc = ctypes.CDLL(None, use_errno=True)
+    prctl = libc.prctl
+    prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+    prctl.restype = ctypes.c_int
+    if prctl(1, signal.SIGTERM, 0, 0, 0) != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number))
+    if os.getppid() != expected_parent_pid:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
 def normalize(value):
     return " ".join(str(value or "").casefold().split())
 
@@ -126,6 +149,7 @@ def window_title_matches(title, names):
 
 
 def monitor(window_name):
+    configure_parent_death_signal()
     import gi
 
     gi.require_version("Atspi", "2.0")
