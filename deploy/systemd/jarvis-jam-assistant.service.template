@@ -14,6 +14,7 @@ Environment="JARVIS_JAM_ASSISTANT_HOST=127.0.0.1"
 Environment="JARVIS_JAM_ASSISTANT_PORT=4173"
 Environment="JARVIS_JAM_ASSISTANT_TAILSCALE_PORT=4173"
 Environment="JARVIS_TAILSCALE_EXECUTABLE=@@TAILSCALE_EXECUTABLE@@"
+Environment="PATH=@@TOOL_PATH@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin:/opt/nodejs/bin"
 EnvironmentFile=-%h/.config/jarvis/.env
 ExecStart=@@JAM_RUNNER@@
 Restart=on-failure

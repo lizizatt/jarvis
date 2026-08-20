@@ -99,6 +99,8 @@ sed \
 sed \
   -e "s|%h|$HOME|g" \
   -e "s|@@JAM_ASSISTANT_ROOT@@|$JAM_ASSISTANT_ROOT|g" \
+  -e "s|@@TAILSCALE_EXECUTABLE@@|$TAILSCALE_EXECUTABLE|g" \
+  -e "s|@@TOOL_PATH@@|$TOOL_PATH|g" \
   -e "s|@@JAM_RUNNER@@|$JAM_RUNNER|g" \
   "$SCRIPT_DIR/jarvis-jam-assistant.service.template" > "$JAM_SERVICE_FILE"
 
