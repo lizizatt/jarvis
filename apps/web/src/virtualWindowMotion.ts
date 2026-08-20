@@ -330,3 +330,53 @@ export function panFromUnwrappedAngles(
 export function motionFromRelativeQuaternion(relative: Quaternion, gain = 1.45, invert: AxisInversion = false): MotionVector {
   return motionFromRelativeAngles(anglesFromRelativeQuaternion(relative), gain, invert);
 }
+
+/**
+ * Exponential low-pass filter in quaternion space. Each call returns a new
+ * quaternion that has moved `alpha` of the way from `previous` toward `next`
+ * along the shortest great-circle arc (SLERP). Use a small `alpha` (e.g.
+ * 0.1–0.3 per sensor sample) to attenuate high-frequency sensor noise while
+ * preserving the perceptual feel of deliberate head/device movement.
+ *
+ * `alpha` is frame-rate–independent when computed as:
+ *   alpha = 1 - Math.exp(-dtMs / TAU_MS)
+ * where TAU_MS is the desired time-constant in milliseconds.
+ */
+export function slerpQuaternions(previous: Quaternion, next: Quaternion, alpha: number): Quaternion {
+  const p = normalizeQuaternion(previous);
+  const n = normalizeQuaternion(next);
+
+  // Choose the shorter arc — dot product tells us which hemisphere `n` is in
+  // relative to `p`.  If negative, negate `n` so we always interpolate < 180°.
+  let dot = p.x * n.x + p.y * n.y + p.z * n.z + p.w * n.w;
+  const nx = dot < 0 ? -n.x : n.x;
+  const ny = dot < 0 ? -n.y : n.y;
+  const nz = dot < 0 ? -n.z : n.z;
+  const nw = dot < 0 ? -n.w : n.w;
+  dot = Math.abs(dot);
+
+  // For very small angles fall back to linear interpolation to avoid
+  // division-by-near-zero in the full SLERP path.
+  if (dot > 0.9995) {
+    return normalizeQuaternion({
+      x: p.x + alpha * (nx - p.x),
+      y: p.y + alpha * (ny - p.y),
+      z: p.z + alpha * (nz - p.z),
+      w: p.w + alpha * (nw - p.w)
+    });
+  }
+
+  const theta0 = Math.acos(clamp(dot, -1, 1));
+  const theta = theta0 * alpha;
+  const sinTheta = Math.sin(theta);
+  const sinTheta0 = Math.sin(theta0);
+  const s0 = Math.cos(theta) - dot * sinTheta / sinTheta0;
+  const s1 = sinTheta / sinTheta0;
+
+  return normalizeQuaternion({
+    x: s0 * p.x + s1 * nx,
+    y: s0 * p.y + s1 * ny,
+    z: s0 * p.z + s1 * nz,
+    w: s0 * p.w + s1 * nw
+  });
+}

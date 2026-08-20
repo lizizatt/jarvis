@@ -16,6 +16,16 @@ export interface HelloMessage {
 	windowName: string;
 	workspaceRoots: string[];
 	models: ModelMetadata[];
+	presence: WorkerPresence;
+	nativeChatActivity: WorkerActivity;
+}
+
+export type WorkerActivity = 'idle' | 'thinking' | 'needs-input';
+
+export interface WorkerPresence {
+	focused: boolean;
+	active: boolean;
+	updatedAt: string;
 }
 
 export interface TurnHistoryEntry {

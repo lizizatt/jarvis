@@ -64,7 +64,7 @@ export function PreviewPanel({ repositoryId, repositoryName, previewUrl }: { rep
     </div>
     {files.error && <div className="notice error">{files.error}</div>}
     {previewSrc
-      ? <iframe title={selected ?? `${repositoryName} preview`} src={previewSrc} data-testid="preview-frame" />
+      ? <iframe title={selected ?? `${repositoryName} preview`} src={previewSrc} sandbox="" data-testid="preview-frame" />
       : <div className="empty"><Monitor /><h2>No preview available</h2><p>Search for a README or HTML file above, or register a Jarvis-managed landing page.</p></div>}
   </div>;
 }

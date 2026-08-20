@@ -1,3 +1,35 @@
 .jarvis-system-status-offline {
   opacity: 0.55;
 }
+
+#panel .jarvis-system-status-indicator:hover {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 100px transparent;
+}
+
+.jarvis-status-item {
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+#panel .jarvis-status-item:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.jarvis-worker-status {
+  margin-left: 8px;
+  border-bottom-width: 2px;
+  border-bottom-color: transparent;
+}
+
+.jarvis-worker-focused {
+  border-bottom-color: #8ae234;
+}
+
+.jarvis-worker-active {
+  border-bottom-color: #fce94f;
+}
+
+.jarvis-worker-background {
+  opacity: 0.6;
+}

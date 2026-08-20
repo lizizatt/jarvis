@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import * as vscode from 'vscode';
 import { runAgentTurn } from './agent';
+import { NativeChatActivityMonitor } from './nativeChatActivity';
 import {
 	EventMessage,
 	HelloMessage,
@@ -10,6 +11,7 @@ import {
 	TerminalMessage,
 	TurnMessage,
 	WORKER_PROTOCOL_VERSION,
+	WorkerActivity,
 } from './protocol';
 
 const ENABLED_KEY = 'jarvis-copilot-worker.enabled';
@@ -20,6 +22,7 @@ interface RunningTurn {
 }
 
 interface NativeChatRoute {
+	socket: WebSocket;
 	response: vscode.ChatResponseStream;
 	resolve: (text: string) => void;
 	reject: (error: Error) => void;
@@ -39,11 +42,17 @@ export class WorkerClient implements vscode.Disposable {
 	private workspaceRoots: string[] = [];
 	private readonly runningTurns = new Map<string, RunningTurn>();
 	private readonly nativeChatRoutes = new Map<string, NativeChatRoute>();
+	private readonly nativeChatActivityMonitor: NativeChatActivityMonitor;
+	private nativeChatActivity: WorkerActivity = 'idle';
+	private nativeChatActivityWarningShown = false;
 	private disposed = false;
 
-	constructor(private readonly context: vscode.ExtensionContext) {}
+	constructor(private readonly context: vscode.ExtensionContext) {
+		this.nativeChatActivityMonitor = new NativeChatActivityMonitor(context);
+	}
 
 	async initialize(): Promise<void> {
+		this.initializeNativeChatActivity();
 		await this.refreshWorkspaceRoots();
 		if (this.isEnabled()) {
 			await this.refreshModels();
@@ -86,6 +95,10 @@ export class WorkerClient implements vscode.Disposable {
 		}
 	}
 
+	refreshWindowState(): void {
+		this.sendHello();
+	}
+
 	restartTransport(): void {
 		if (!this.isEnabled()) {
 			return;
@@ -101,7 +114,7 @@ export class WorkerClient implements vscode.Disposable {
 		const connection = this.socket?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
 		return `Jarvis Copilot Worker is ${this.isEnabled() ? 'enabled' : 'disabled'} and ${connection}. `
 			+ `${this.models.length} Copilot model(s), ${this.workspaceRoots.length} workspace root(s), `
-			+ `${this.runningTurns.size} active turn(s).`;
+			+ `${this.runningTurns.size} active turn(s), native chat ${this.nativeChatActivity}.`;
 	}
 
 	async handleChatRequest(request: vscode.ChatRequest, context: vscode.ChatContext,
@@ -118,8 +131,9 @@ export class WorkerClient implements vscode.Disposable {
 
 		const prior = chatTaskMetadata(context);
 		const clientConversationId = prior?.clientConversationId ?? randomUUID();
+		const socket = this.socket;
 		const completion = new Promise<string>((resolve, reject) => {
-			this.nativeChatRoutes.set(clientConversationId, { response, resolve, reject });
+			this.nativeChatRoutes.set(clientConversationId, { socket, response, resolve, reject });
 		});
 		let taskId: string | undefined;
 		const cancellation = token.onCancellationRequested(() => {
@@ -148,6 +162,7 @@ export class WorkerClient implements vscode.Disposable {
 
 	dispose(): void {
 		this.disposed = true;
+		this.nativeChatActivityMonitor.dispose();
 		this.clearReconnect();
 		this.socket?.close();
 		for (const running of this.runningTurns.values()) {
@@ -192,6 +207,12 @@ export class WorkerClient implements vscode.Disposable {
 		});
 		socket.addEventListener('close', () => {
 			this.cancelRunningTurns();
+			for (const [conversationId, route] of this.nativeChatRoutes) {
+				if (route.socket === socket) {
+					route.reject(new Error('Jarvis worker disconnected'));
+					this.nativeChatRoutes.delete(conversationId);
+				}
+			}
 			if (this.socket === socket) {
 				this.socket = undefined;
 			}
@@ -306,6 +327,7 @@ export class WorkerClient implements vscode.Disposable {
 		}
 
 	private sendHello(): void {
+		const { focused, active } = vscode.window.state;
 		this.send({
 			type: 'hello',
 			version: WORKER_PROTOCOL_VERSION,
@@ -313,6 +335,34 @@ export class WorkerClient implements vscode.Disposable {
 			windowName: vscode.workspace.name ?? vscode.env.appName,
 			workspaceRoots: this.workspaceRoots,
 			models: this.models.map(modelMetadata),
+			presence: { focused, active, updatedAt: new Date().toISOString() },
+			nativeChatActivity: this.nativeChatActivity,
+		});
+	}
+
+	private initializeNativeChatActivity(): void {
+		if (process.platform !== 'linux'
+			|| !vscode.workspace.getConfiguration('jarvisCopilotWorker').get<boolean>('nativeChatActivity.enabled', true)) {
+			return;
+		}
+		if (vscode.workspace.getConfiguration('editor').get<string>('accessibilitySupport', 'auto') !== 'on') {
+			void vscode.window.showInformationMessage(
+				'Jarvis needs VS Code accessibility support to observe native Copilot Chat activity.',
+				'Enable and Reload',
+			).then(async selection => {
+				if (selection !== 'Enable and Reload') { return; }
+				await vscode.workspace.getConfiguration('editor').update('accessibilitySupport', 'on', vscode.ConfigurationTarget.Global);
+				await vscode.commands.executeCommand('workbench.action.reloadWindow');
+			});
+			return;
+		}
+		this.nativeChatActivityMonitor.start(vscode.workspace.name ?? vscode.env.appName, activity => {
+			this.nativeChatActivity = activity;
+			this.sendHello();
+		}, error => {
+			if (this.nativeChatActivityWarningShown) { return; }
+			this.nativeChatActivityWarningShown = true;
+			void vscode.window.showWarningMessage(`Jarvis could not observe native Copilot Chat activity: ${error.message}`);
 		});
 	}
 

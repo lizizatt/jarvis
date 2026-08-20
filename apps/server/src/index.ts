@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
-import { positiveInteger } from './config.js';
+import { isLoopbackHost, positiveInteger } from './config.js';
 import type { ServerConfig } from './types.js';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
@@ -19,9 +19,13 @@ const frameworkInstructions = existsSync(instructionsPath) ? readFileSync(instru
 const configuredPolicy = process.env.JARVIS_POLICY || 'Work autonomously, but ask the user before commit, push, or pull-request operations unless this task explicitly grants permission.';
 const agentBackend = process.env.JARVIS_AGENT_BACKEND || 'worker';
 if (!['auto', 'worker', 'cli'].includes(agentBackend)) throw new Error('JARVIS_AGENT_BACKEND must be auto, worker, or cli');
+const host = process.env.JARVIS_HOST || '127.0.0.1';
+if (!isLoopbackHost(host) && process.env.JARVIS_ALLOW_INSECURE_NETWORK !== 'true') {
+  throw new Error('JARVIS_HOST must remain loopback unless JARVIS_ALLOW_INSECURE_NETWORK=true');
+}
 const config: ServerConfig = {
   dataDir,
-  host: process.env.JARVIS_HOST || '127.0.0.1',
+  host,
   port: Number(process.env.JARVIS_PORT || 3210),
   agentExecutable: process.env.JARVIS_AGENT_EXECUTABLE || 'copilot',
   agentBackend: agentBackend as ServerConfig['agentBackend'],

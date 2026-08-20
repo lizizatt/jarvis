@@ -13,6 +13,8 @@ interface WorkerHello {
   windowName: string;
   workspaceRoots: string[];
   models: ModelMetadata[];
+  presence?: WorkerPresence;
+  nativeChatActivity?: WorkerActivity;
 }
 
 export interface ModelMetadata {
@@ -48,7 +50,12 @@ export interface WorkerStatus {
   models: ModelMetadata[];
   connectedAt: string;
   activeTaskIds: string[];
+  activity: WorkerActivity;
+  presence: WorkerPresence;
 }
+
+export type WorkerActivity = 'idle' | 'thinking' | 'needs-input';
+export interface WorkerPresence { focused: boolean; active: boolean; updatedAt: string }
 
 export interface WorkerTurnCallbacks {
   event: (event: unknown) => void;
@@ -60,6 +67,8 @@ interface WorkerConnection extends WorkerStatus {
   socket: WebSocket;
   alive: boolean;
   tasks: Map<string, WorkerTurnCallbacks>;
+  taskActivities: Map<string, Exclude<WorkerActivity, 'idle'>>;
+  nativeChatActivity: WorkerActivity;
   heartbeat: NodeJS.Timeout;
 }
 
@@ -97,8 +106,9 @@ export class WorkerManager {
   }
 
   list(): WorkerStatus[] {
-    return [...this.workers.values()].map(({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds }) =>
-      ({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds: [...activeTaskIds] }));
+    return [...this.workers.values()].map(({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds, taskActivities,
+      nativeChatActivity, presence }) => ({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds: [...activeTaskIds],
+        activity: workerActivity(taskActivities, nativeChatActivity), presence }));
   }
 
   hasWorker(repositoryPath: string): boolean {
@@ -114,6 +124,7 @@ export class WorkerManager {
     const worker = [...this.workers.values()].find((candidate) => candidate.workspaceRoots.includes(repository.path));
     if (!worker || worker.socket.readyState !== worker.socket.OPEN) return undefined;
     worker.tasks.set(task.id, callbacks);
+    worker.taskActivities.set(task.id, 'thinking');
     worker.activeTaskIds.push(task.id);
     try {
       worker.socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'turn', taskId: task.id,
@@ -141,16 +152,23 @@ export class WorkerManager {
       this.disconnect(existing);
       existing.socket.close(1008, 'Worker ID reconnected');
     }
+    const connectedAt = new Date().toISOString();
     const worker: WorkerConnection = { socket, workerId: hello.workerId, windowName: hello.windowName,
-      workspaceRoots, models: hello.models, connectedAt: new Date().toISOString(), activeTaskIds: [],
-      alive: true, tasks: new Map(), heartbeat: undefined as unknown as NodeJS.Timeout };
+      workspaceRoots, models: hello.models, connectedAt, activeTaskIds: [], presence: hello.presence ?? defaultPresence(connectedAt),
+      activity: 'idle', nativeChatActivity: hello.nativeChatActivity ?? 'idle', alive: true, tasks: new Map(), taskActivities: new Map(),
+      heartbeat: undefined as unknown as NodeJS.Timeout };
     worker.heartbeat = setInterval(() => {
       if (!worker.alive) { worker.socket.terminate(); return; }
       worker.alive = false;
       worker.socket.ping();
     }, HEARTBEAT_INTERVAL_MS);
+    try {
+      socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'ready', workerId: worker.workerId }));
+    } catch (error) {
+      clearInterval(worker.heartbeat);
+      throw error;
+    }
     this.workers.set(worker.workerId, worker);
-    socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'ready', workerId: worker.workerId }));
     return worker;
   }
 
@@ -158,18 +176,24 @@ export class WorkerManager {
     if (hello.workerId !== worker.workerId) throw new Error('Worker ID cannot change');
     const roots = [...hello.workspaceRoots];
     const workspaceRoots = [...new Set(await Promise.all(roots.map((root) => realpath(root))))];
+    worker.socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'ready', workerId: worker.workerId }));
     worker.windowName = hello.windowName;
     worker.workspaceRoots = workspaceRoots;
     worker.models = hello.models;
-    worker.socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'ready', workerId: worker.workerId }));
+    worker.presence = hello.presence ?? worker.presence;
+    worker.nativeChatActivity = hello.nativeChatActivity ?? worker.nativeChatActivity;
   }
 
   private handle(worker: WorkerConnection, message: Exclude<WorkerMessage, WorkerHello>): void {
     const callbacks = worker.tasks.get(message.taskId);
     if (!callbacks) return;
     if (message.type === 'event') {
+      if (isInputRequest(message.kind, message.payload)) worker.taskActivities.set(message.taskId, 'needs-input');
       callbacks.event({ type: message.kind, ...recordPayload(message.payload), data: message.payload });
       return;
+    }
+    if (message.type !== 'complete' || worker.taskActivities.get(message.taskId) !== 'needs-input') {
+      worker.taskActivities.delete(message.taskId);
     }
     callbacks.terminal(message.type === 'complete' ? 'completed' : message.type, message.payload?.error);
   }
@@ -180,14 +204,28 @@ export class WorkerManager {
     this.workers.delete(worker.workerId);
     const tasks = [...worker.tasks.values()];
     worker.tasks.clear();
+    worker.taskActivities.clear();
     worker.activeTaskIds.length = 0;
     for (const callbacks of tasks) callbacks.disconnected();
   }
 
   private release(worker: WorkerConnection, taskId: string): void {
     worker.tasks.delete(taskId);
+    if (worker.taskActivities.get(taskId) !== 'needs-input') worker.taskActivities.delete(taskId);
     worker.activeTaskIds = worker.activeTaskIds.filter((candidate) => candidate !== taskId);
   }
+}
+
+function workerActivity(taskActivities: Map<string, Exclude<WorkerActivity, 'idle'>>, nativeChatActivity: WorkerActivity): WorkerActivity {
+  return nativeChatActivity === 'needs-input' || [...taskActivities.values()].includes('needs-input')
+    ? 'needs-input'
+    : nativeChatActivity === 'thinking' || taskActivities.size > 0 ? 'thinking' : 'idle';
+}
+
+function isInputRequest(kind: string, payload: unknown): boolean {
+  const data = recordPayload(payload);
+  const eventType = [kind, data.type].find((candidate): candidate is string => typeof candidate === 'string') ?? '';
+  return /(?:^|[._-])(question|approval|required[_-]?input)(?:$|[._-])/i.test(eventType);
 }
 
 function parseMessage(raw: string): WorkerMessage {
@@ -195,7 +233,9 @@ function parseMessage(raw: string): WorkerMessage {
   if (message.version !== PROTOCOL_VERSION) throw new Error('Unsupported worker protocol version');
   if (message.type === 'hello') {
     if (!isString(message.workerId) || !isString(message.windowName) || !isStrings(message.workspaceRoots)
-      || !Array.isArray(message.models) || !message.models.every(isModelMetadata)) {
+      || !Array.isArray(message.models) || !message.models.every(isModelMetadata)
+      || (message.presence !== undefined && !isWorkerPresence(message.presence))
+      || (message.nativeChatActivity !== undefined && !isWorkerActivity(message.nativeChatActivity))) {
       throw new Error('Invalid worker hello');
     }
     return message as WorkerHello;
@@ -217,6 +257,15 @@ function isModelMetadata(value: unknown): value is ModelMetadata {
   return ['id', 'name', 'vendor', 'family', 'version'].every((key) => isString(model[key]))
     && typeof model.maxInputTokens === 'number';
 }
+function isWorkerPresence(value: unknown): value is WorkerPresence {
+  if (typeof value !== 'object' || value === null) return false;
+  const presence = value as Record<string, unknown>;
+  return typeof presence.focused === 'boolean' && typeof presence.active === 'boolean' && isString(presence.updatedAt);
+}
+function isWorkerActivity(value: unknown): value is WorkerActivity {
+  return value === 'idle' || value === 'thinking' || value === 'needs-input';
+}
+function defaultPresence(updatedAt: string): WorkerPresence { return { focused: false, active: false, updatedAt }; }
 function recordPayload(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

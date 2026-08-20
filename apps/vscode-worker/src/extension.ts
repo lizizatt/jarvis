@@ -32,6 +32,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 		vscode.lm.onDidChangeChatModels(() => void worker.refreshModels()),
 		vscode.workspace.onDidChangeWorkspaceFolders(() => void worker.refreshWorkspaceRoots()),
+		vscode.window.onDidChangeWindowState(() => worker.refreshWindowState()),
 		vscode.workspace.onDidChangeConfiguration(event => {
 			if (event.affectsConfiguration('jarvisCopilotWorker.serverUrl')) {
 				worker.restartTransport();

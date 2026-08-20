@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
-import { positiveInteger } from '../src/config.js';
+import { isLoopbackHost, positiveInteger } from '../src/config.js';
 import { Store } from '../src/database.js';
 import { normalizePullRequest } from '../src/git.js';
 import { readPreviewFile } from '../src/previews.js';
@@ -27,6 +27,14 @@ afterEach(async () => {
 });
 
 describe('server MVP', () => {
+  it('recognizes only local server bind addresses as loopback', () => {
+    expect(isLoopbackHost('127.0.0.1')).toBe(true);
+    expect(isLoopbackHost('localhost')).toBe(true);
+    expect(isLoopbackHost('::1')).toBe(true);
+    expect(isLoopbackHost('0.0.0.0')).toBe(false);
+    expect(isLoopbackHost('192.168.1.10')).toBe(false);
+  });
+
   it('migrates durable state and marks active tasks interrupted on startup', async () => {
     const sandbox = await makeSandbox();
     const store = new Store(join(sandbox.dataDir, 'jarvis.sqlite3'));
@@ -378,22 +386,41 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
     expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()).toMatchObject([{
       workerId: 'test-worker', windowName: 'test-window', workspaceRoots: [sandbox.repository],
       models: expect.arrayContaining([expect.objectContaining({ id: 'auto', vendor: 'copilot' })]),
-      activeTaskIds: [],
+      activeTaskIds: [], activity: 'idle', presence: { focused: true, active: true },
     }]);
+    worker.socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
+      workspaceRoots: [workerRoot], models: [], nativeChatActivity: 'thinking',
+      presence: { focused: false, active: true, updatedAt: new Date().toISOString() } }));
+    await waitFor(async () => (await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].presence.focused === false);
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0]).toMatchObject({
+      activity: 'thinking', presence: { focused: false, active: true },
+    });
+    worker.socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
+      workspaceRoots: [workerRoot], models: [], nativeChatActivity: 'needs-input',
+      presence: { focused: false, active: true, updatedAt: new Date().toISOString() } }));
+    await waitFor(async () => (await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity === 'needs-input');
+    worker.socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
+      workspaceRoots: [workerRoot], models: [], nativeChatActivity: 'idle',
+      presence: { focused: false, active: true, updatedAt: new Date().toISOString() } }));
+    await waitFor(async () => (await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity === 'idle');
     const task = (await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
       payload: { prompt: 'worker first' } })).json() as Task;
     const firstTurn = await takeWorkerMessage(worker, 'turn');
     expect(firstTurn).toMatchObject({ version: 2, taskId: task.id, sessionId: task.sessionId,
       policy: 'TEST POLICY', prompt: 'worker first', repositoryPath: sandbox.repository, modelId: 'auto' });
     expect(firstTurn.history).toEqual([]);
-    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activeTaskIds).toEqual([task.id]);
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0]).toMatchObject({
+      activeTaskIds: [task.id], activity: 'thinking',
+    });
 
     worker.socket.send(JSON.stringify({ version: 2, type: 'event', taskId: task.id,
       kind: 'question', payload: { type: 'question', questionId: 'question-1', prompt: 'Choose a path', choices: ['A', 'B'] } }));
+    await waitFor(async () => (await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity === 'needs-input');
     worker.socket.send(JSON.stringify({ version: 2, type: 'event', taskId: task.id,
       kind: 'tool-completed', payload: { toolName: 'edit', message: 'Changed a file' } }));
     worker.socket.send(JSON.stringify({ version: 2, type: 'complete', taskId: task.id }));
     await waitFor(async () => (await taskFrom(app, task.id)).state === 'completed');
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity).toBe('needs-input');
     const firstEvents = (await app.inject({ method: 'GET', url: `/api/tasks/${task.id}/events` })).json();
     expect(firstEvents.filter((event: { kind: string; payload?: { type?: string; prompt?: string } }) =>
       event.kind === 'agent_event' && event.payload?.type === 'question')).toEqual([
@@ -405,10 +432,12 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
     expect((await app.inject({ method: 'POST', url: `/api/tasks/${task.id}/messages`,
       payload: { prompt: 'worker second' } })).statusCode).toBe(200);
     const secondTurn = await takeWorkerMessage(worker, 'turn');
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity).toBe('thinking');
     expect(secondTurn).toMatchObject({ taskId: task.id, sessionId: task.sessionId, prompt: 'worker second' });
     expect(secondTurn.history).toEqual(expect.arrayContaining([{ role: 'user', content: 'worker first' }]));
     worker.socket.send(JSON.stringify({ version: 2, type: 'complete', taskId: task.id }));
     await waitFor(async () => (await taskFrom(app, task.id)).state === 'completed');
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity).toBe('idle');
     worker.socket.close();
   });
 
@@ -758,7 +787,7 @@ async function connectWorker(address: string, workspaceRoot: string, models = [
   socket.on('message', (message) => messages.push(JSON.parse(message.toString()) as Record<string, unknown>));
   await onceOpen(socket);
   socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
-    workspaceRoots: [workspaceRoot], models }));
+    workspaceRoots: [workspaceRoot], models, presence: { focused: true, active: true, updatedAt: new Date().toISOString() } }));
   const worker = { socket, messages };
   await takeWorkerMessage(worker, 'ready');
   return worker;

@@ -17,6 +17,7 @@ import {
   orientationToQuaternion,
   relativeQuaternion,
   relativeQuaternionToWindowAngles,
+  slerpQuaternions,
   unwrapAngleRadians,
   DEFAULT_EARTH_ORBIT_ACCELERATION,
   earthOrbitPhaseSeconds,
@@ -27,7 +28,15 @@ import { createVirtualWindowRenderer } from '../virtualWindowRenderer';
 
 const STARMAP_URL = '/media/starmap_2020_4k.png';
 const MAX_EARTH_ORBIT_ACCELERATION = 120;
-const MOTION_SMOOTHING_TIME_MS = 20;
+// Time-constant for the output exponential lerp (pan/roll positions).
+// Raising this from the previous 20 ms to 80 ms is the primary jitter fix:
+// the blend factor at a 16 ms frame drops from ~0.55 to ~0.18, attenuating
+// sensor noise by ~3x before it reaches the renderer.
+const MOTION_SMOOTHING_TIME_MS = 80;
+// Time-constant for the quaternion-domain input low-pass filter applied once
+// per sensor sample (~60 Hz). Pre-smoothing the raw IMU reading before angle
+// extraction eliminates jitter the downstream lerp alone cannot remove.
+const SENSOR_LPF_TAU_MS = 40;
 
 function readHorizonDebugFlag() {
   if (typeof window === 'undefined') return false;
@@ -73,6 +82,8 @@ export function AmbientSigil() {
     let animationStartTime: number | null = null;
     let orientationActive = false;
     let referenceQuaternion: Quaternion | null = null;
+    let smoothedQuaternion: Quaternion | null = null;
+    let lastSensorSampleTime = 0;
     let referenceAngles: { pitch: number; yaw: number } | null = null;
     let gravityAngles: { pitch: number; roll: number } | null = null;
     let unwrappedPitch = 0;
@@ -98,12 +109,32 @@ export function AmbientSigil() {
     }
 
     function readOrientation(alpha: number, beta: number, gamma: number) {
-      const currentQuaternion = orientationToQuaternion({
+      const rawQuaternion = orientationToQuaternion({
         alpha,
         beta,
         gamma,
         screenOrientationAngle: screenOrientationAngle()
       });
+
+      // Quaternion-domain low-pass filter: blend toward the new raw sample
+      // using a frame-rate-independent alpha computed from elapsed time since
+      // the previous sensor sample.  This removes high-frequency IMU noise
+      // before any angle extraction.
+      const now = performance.now();
+      const dtMs = lastSensorSampleTime > 0 ? Math.min(now - lastSensorSampleTime, 100) : 16;
+      lastSensorSampleTime = now;
+      const lpfAlpha = 1 - Math.exp(-dtMs / SENSOR_LPF_TAU_MS);
+      if (!smoothedQuaternion) {
+        // First sample: snap immediately and pretend the previous frame was
+        // 16 ms ago so the next event gets a sensible lpfAlpha regardless of
+        // how quickly the second event arrives (e.g. in tests).
+        smoothedQuaternion = rawQuaternion;
+        lastSensorSampleTime = now - 16;
+      } else {
+        smoothedQuaternion = slerpQuaternions(smoothedQuaternion, rawQuaternion, lpfAlpha);
+      }
+
+      const currentQuaternion = smoothedQuaternion;
       if (!referenceQuaternion) {
         referenceQuaternion = currentQuaternion;
         referenceAngles = null;
@@ -281,6 +312,7 @@ export function AmbientSigil() {
     const onFrameRateChange = (event: Event) => {
       const fps = (event as CustomEvent<number>).detail;
       frameInterval = 1000 / (fps > 0 ? fps : getSigilFrameRate());
+      lastDrawTime = -Infinity;
     };
     window.addEventListener(SIGIL_FRAME_RATE_EVENT, onFrameRateChange as EventListener);
 

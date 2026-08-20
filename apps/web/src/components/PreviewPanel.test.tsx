@@ -17,6 +17,7 @@ test('auto-selects a root README.md when one is available', async () => {
   render(<PreviewPanel repositoryId="repo-1" repositoryName="Scratch" />);
   const frame = await screen.findByTestId('preview-frame');
   expect(frame).toHaveAttribute('src', '/previews/repo-1/repo/README.md');
+  expect(frame).toHaveAttribute('sandbox', '');
 });
 
 test('falls back to the Jarvis landing page when nothing is selected', async () => {

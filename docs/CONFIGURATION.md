@@ -7,6 +7,7 @@ The systemd services load `~/.config/jarvis/.env`. For foreground development, e
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `JARVIS_HOST` | `127.0.0.1` | Server bind address. Keep localhost when using Tailscale Serve. |
+| `JARVIS_ALLOW_INSECURE_NETWORK` | unset | Must be `true` to bind outside loopback. Direct LAN/public binds have no Jarvis authentication; prefer Tailscale Serve. |
 | `JARVIS_PORT` | `3210` | Server port. |
 | `JARVIS_DATA_DIR` | `~/.jarvis` | SQLite database, previews, and terminal socket. |
 | `JARVIS_AGENT_BACKEND` | `worker` | `worker` requires a matching connected VS Code window; `cli` runs the configured executable; `auto` prefers a worker and falls back to CLI. |
