@@ -436,7 +436,7 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
     const worker = await connectWorker(address, workerRoot);
 
     expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()).toMatchObject([{
-      workerId: 'test-worker', windowName: 'test-window', workspaceRoots: [sandbox.repository],
+      workerId: 'test-worker', windowName: 'test-window', windowPid: process.pid, workspaceRoots: [sandbox.repository],
       models: expect.arrayContaining([expect.objectContaining({ id: 'auto', vendor: 'copilot' })]),
       activeTaskIds: [], activity: 'idle', presence: { focused: true, active: true },
     }]);
@@ -472,7 +472,7 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
       kind: 'tool-completed', payload: { toolName: 'edit', message: 'Changed a file' } }));
     worker.socket.send(JSON.stringify({ version: 2, type: 'complete', taskId: task.id }));
     await waitFor(async () => (await taskFrom(app, task.id)).state === 'completed');
-    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity).toBe('needs-input');
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity).toBe('idle');
     const firstEvents = (await app.inject({ method: 'GET', url: `/api/tasks/${task.id}/events` })).json();
     expect(firstEvents.filter((event: { kind: string; payload?: { type?: string; prompt?: string } }) =>
       event.kind === 'agent_event' && event.payload?.type === 'question')).toEqual([
@@ -839,7 +839,8 @@ async function connectWorker(address: string, workspaceRoot: string, models = [
   socket.on('message', (message) => messages.push(JSON.parse(message.toString()) as Record<string, unknown>));
   await onceOpen(socket);
   socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
-    workspaceRoots: [workspaceRoot], models, presence: { focused: true, active: true, updatedAt: new Date().toISOString() } }));
+    windowPid: process.pid, workspaceRoots: [workspaceRoot], models,
+    presence: { focused: true, active: true, updatedAt: new Date().toISOString() } }));
   const worker = { socket, messages };
   await takeWorkerMessage(worker, 'ready');
   return worker;

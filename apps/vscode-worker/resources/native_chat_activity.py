@@ -90,7 +90,7 @@ def controls_in(frame, atspi):
     return controls
 
 
-def find_window(atspi, window_name):
+def find_window(atspi, window_names):
     desktop = atspi.get_desktop(0)
     pending = [desktop]
     visited = 0
@@ -98,7 +98,7 @@ def find_window(atspi, window_name):
         accessible = pending.pop()
         visited += 1
         try:
-            if accessible.get_role() == atspi.Role.FRAME and window_title_matches(accessible_name(accessible), [window_name]):
+            if accessible.get_role() == atspi.Role.FRAME and window_title_matches(accessible_name(accessible), window_names):
                 return accessible
             for index in range(accessible.get_child_count()):
                 child = accessible.get_child_at_index(index)
@@ -107,6 +107,14 @@ def find_window(atspi, window_name):
         except Exception:
             continue
     return None
+
+
+def parse_window_names(value):
+    try:
+        window_names = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        window_names = [value]
+    return window_names if isinstance(window_names, list) else [value]
 
 
 def window_title_matches(title, names):
@@ -124,12 +132,7 @@ def monitor(window_name):
     from gi.repository import Atspi
 
     Atspi.init()
-    try:
-        window_names = json.loads(window_name)
-    except (TypeError, json.JSONDecodeError):
-        window_names = [window_name]
-    if not isinstance(window_names, list):
-        window_names = [window_name]
+    window_names = parse_window_names(window_name)
     previous = None
     while True:
         frame = find_window(Atspi, window_names)
@@ -144,6 +147,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--classify")
     parser.add_argument("--match-window")
+    parser.add_argument("--match-monitor-window")
     parser.add_argument("--window")
     args = parser.parse_args()
     if args.classify is not None:
@@ -152,6 +156,10 @@ def main():
     if args.match_window is not None:
         value = json.loads(args.match_window)
         print(str(window_title_matches(value.get("title"), value.get("names"))).lower())
+        return
+    if args.match_monitor_window is not None:
+        value = json.loads(args.match_monitor_window)
+        print(str(window_title_matches(value.get("title"), parse_window_names(value.get("window")))).lower())
         return
     if not args.window:
         parser.error("--window is required")

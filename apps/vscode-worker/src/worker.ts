@@ -334,6 +334,7 @@ export class WorkerClient implements vscode.Disposable {
 			version: WORKER_PROTOCOL_VERSION,
 			workerId: this.workerId(),
 			windowName: vscode.workspace.name ?? vscode.env.appName,
+			windowPid: process.ppid,
 			workspaceRoots: this.workspaceRoots,
 			models: this.models.map(modelMetadata),
 			presence: { focused, active, updatedAt: new Date().toISOString() },

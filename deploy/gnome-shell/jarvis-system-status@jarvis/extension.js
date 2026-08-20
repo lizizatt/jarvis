@@ -116,8 +116,9 @@ export default class JarvisSystemStatusExtension extends Extension {
     if (!session) return null;
     const message = Soup.Message.new('GET', `${DASHBOARD_URL}api/${path}`);
     const cancellable = Gio.Cancellable.new();
-    const timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+    let timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
       cancellable.cancel();
+      timeout = 0;
       return GLib.SOURCE_REMOVE;
     });
     try {
@@ -128,7 +129,10 @@ export default class JarvisSystemStatusExtension extends Extension {
       console.debug(`Jarvis system status: ${error.message}`);
       return null;
     } finally {
-      GLib.Source.remove(timeout);
+      if (timeout) {
+        GLib.Source.remove(timeout);
+        timeout = 0;
+      }
     }
   }
 
@@ -147,7 +151,8 @@ export default class JarvisSystemStatusExtension extends Extension {
   async _refreshCredits() {
     const credits = await this._fetch('copilot-usage');
     if (!this._credits) return;
-    this._creditText = credits ? `CR ${credits.creditsUsed.toLocaleString()}` : 'CR --';
+    if (!credits || typeof credits.creditsUsed !== 'number' || !Number.isFinite(credits.creditsUsed)) return;
+    this._creditText = `CR ${credits.creditsUsed.toLocaleString()}`;
     this._credits.text = this._creditText;
   }
 
@@ -203,12 +208,20 @@ export default class JarvisSystemStatusExtension extends Extension {
     const names = [worker.windowName, ...(worker.workspaceRoots ?? []).map((root) => root.split('/').pop())]
       .filter((value) => typeof value === 'string' && value.trim())
       .map((value) => value.trim().toLocaleLowerCase());
-    const window = global.get_window_actors()
+    const candidates = global.get_window_actors()
       .map((actor) => actor.meta_window)
-      .filter((candidate) => candidate?.get_wm_class()?.toLocaleLowerCase().includes('code'))
-      .find((candidate) => windowTitleMatches(candidate.get_title(), names));
+      .filter((candidate) => candidate?.get_wm_class()?.toLocaleLowerCase().includes('code'));
+    const titleMatches = candidates.filter((candidate) => windowTitleMatches(candidate.get_title(), names));
+    const window = worker.windowPid
+      ? candidates.find((candidate) => candidate.get_pid() === worker.windowPid)
+        ?? (titleMatches.length === 1 ? titleMatches[0] : null)
+      : titleMatches.length === 1 ? titleMatches[0] : null;
     if (window) {
       Main.activateWindow(window);
+      return;
+    }
+    if (titleMatches.length > 1) {
+      console.warn(`Jarvis system status: multiple VS Code windows match ${worker.windowName}`);
       return;
     }
     const workspaceRoot = worker.workspaceRoots?.[0];
@@ -221,7 +234,11 @@ export default class JarvisSystemStatusExtension extends Extension {
 
   _flagFor(workerId) {
     if (!this._sessionFlags) this._sessionFlags = new Map();
-    if (!this._sessionFlags.has(workerId)) this._sessionFlags.set(workerId, SESSION_FLAGS[this._sessionFlags.size % SESSION_FLAGS.length]);
+    if (!this._sessionFlags.has(workerId)) {
+      const assigned = new Set(this._sessionFlags.values());
+      const available = SESSION_FLAGS.find((flag) => !assigned.has(flag));
+      this._sessionFlags.set(workerId, available ?? SESSION_FLAGS[this._sessionFlags.size % SESSION_FLAGS.length]);
+    }
     return this._sessionFlags.get(workerId);
   }
 }

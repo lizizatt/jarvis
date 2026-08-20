@@ -11,6 +11,7 @@ interface WorkerHello {
   type: 'hello';
   workerId: string;
   windowName: string;
+  windowPid?: number;
   workspaceRoots: string[];
   models: ModelMetadata[];
   presence?: WorkerPresence;
@@ -46,6 +47,7 @@ type WorkerMessage = WorkerHello | WorkerEventMessage | WorkerTerminalMessage;
 export interface WorkerStatus {
   workerId: string;
   windowName: string;
+  windowPid?: number;
   workspaceRoots: string[];
   models: ModelMetadata[];
   connectedAt: string;
@@ -106,9 +108,9 @@ export class WorkerManager {
   }
 
   list(): WorkerStatus[] {
-    return [...this.workers.values()].map(({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds, taskActivities,
+    return [...this.workers.values()].map(({ workerId, windowName, windowPid, workspaceRoots, models, connectedAt, activeTaskIds, taskActivities,
       nativeChatActivity, presence }) => ({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds: [...activeTaskIds],
-        activity: workerActivity(taskActivities, nativeChatActivity), presence }));
+        windowPid, activity: workerActivity(taskActivities, nativeChatActivity), presence }));
   }
 
   hasWorker(repositoryPath: string): boolean {
@@ -153,7 +155,7 @@ export class WorkerManager {
       existing.socket.close(1008, 'Worker ID reconnected');
     }
     const connectedAt = new Date().toISOString();
-    const worker: WorkerConnection = { socket, workerId: hello.workerId, windowName: hello.windowName,
+    const worker: WorkerConnection = { socket, workerId: hello.workerId, windowName: hello.windowName, windowPid: hello.windowPid,
       workspaceRoots, models: hello.models, connectedAt, activeTaskIds: [], presence: hello.presence ?? defaultPresence(connectedAt),
       activity: 'idle', nativeChatActivity: hello.nativeChatActivity ?? 'idle', alive: true, tasks: new Map(), taskActivities: new Map(),
       heartbeat: undefined as unknown as NodeJS.Timeout };
@@ -178,6 +180,7 @@ export class WorkerManager {
     const workspaceRoots = [...new Set(await Promise.all(roots.map((root) => realpath(root))))];
     worker.socket.send(JSON.stringify({ version: PROTOCOL_VERSION, type: 'ready', workerId: worker.workerId }));
     worker.windowName = hello.windowName;
+    worker.windowPid = hello.windowPid;
     worker.workspaceRoots = workspaceRoots;
     worker.models = hello.models;
     worker.presence = hello.presence ?? worker.presence;
@@ -192,9 +195,7 @@ export class WorkerManager {
       callbacks.event({ type: message.kind, ...recordPayload(message.payload), data: message.payload });
       return;
     }
-    if (message.type !== 'complete' || worker.taskActivities.get(message.taskId) !== 'needs-input') {
-      worker.taskActivities.delete(message.taskId);
-    }
+    worker.taskActivities.delete(message.taskId);
     callbacks.terminal(message.type === 'complete' ? 'completed' : message.type, message.payload?.error);
   }
 
@@ -211,7 +212,7 @@ export class WorkerManager {
 
   private release(worker: WorkerConnection, taskId: string): void {
     worker.tasks.delete(taskId);
-    if (worker.taskActivities.get(taskId) !== 'needs-input') worker.taskActivities.delete(taskId);
+    worker.taskActivities.delete(taskId);
     worker.activeTaskIds = worker.activeTaskIds.filter((candidate) => candidate !== taskId);
   }
 }
@@ -232,7 +233,7 @@ function parseMessage(raw: string): WorkerMessage {
   const message = JSON.parse(raw) as Partial<WorkerMessage> & Record<string, unknown>;
   if (message.version !== PROTOCOL_VERSION) throw new Error('Unsupported worker protocol version');
   if (message.type === 'hello') {
-    if (!isString(message.workerId) || !isString(message.windowName) || !isStrings(message.workspaceRoots)
+    if (!isString(message.workerId) || !isString(message.windowName) || (message.windowPid !== undefined && !isPositiveInteger(message.windowPid)) || !isStrings(message.workspaceRoots)
       || !Array.isArray(message.models) || !message.models.every(isModelMetadata)
       || (message.presence !== undefined && !isWorkerPresence(message.presence))
       || (message.nativeChatActivity !== undefined && !isWorkerActivity(message.nativeChatActivity))) {
@@ -250,6 +251,7 @@ function parseMessage(raw: string): WorkerMessage {
 }
 
 function isString(value: unknown): value is string { return typeof value === 'string' && value.length > 0; }
+function isPositiveInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function isStrings(value: unknown): value is string[] { return Array.isArray(value) && value.every(isString); }
 function isModelMetadata(value: unknown): value is ModelMetadata {
   if (typeof value !== 'object' || value === null) return false;

@@ -22,6 +22,9 @@ suite('native chat activity', () => {
 		assert.strictEqual(await matchesWindow('saildrone-2 - Visual Studio Code', ['saildrone']), 'false');
 		assert.strictEqual(await matchesWindow('saildrone-2 - Visual Studio Code', ['saildrone-2']), 'true');
 	});
+	test('matches the JSON window-name array used by the monitor', async () => {
+		assert.strictEqual(await matchesMonitorWindow('README.md - saildrone - Visual Studio Code', JSON.stringify(['saildrone'])), 'true');
+	});
 });
 
 async function classify(controls: Array<{ role: string; name: string; ancestors: string[] }>): Promise<string> {
@@ -31,5 +34,10 @@ async function classify(controls: Array<{ role: string; name: string; ancestors:
 
 async function matchesWindow(title: string, names: string[]): Promise<string> {
 	const result = await execFileAsync('/usr/bin/python3', [script, '--match-window', JSON.stringify({ title, names })]);
+	return result.stdout.trim();
+}
+
+async function matchesMonitorWindow(title: string, window: string): Promise<string> {
+	const result = await execFileAsync('/usr/bin/python3', [script, '--match-monitor-window', JSON.stringify({ title, window })]);
 	return result.stdout.trim();
 }

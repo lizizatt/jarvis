@@ -14,6 +14,7 @@ export interface HelloMessage {
 	version: typeof WORKER_PROTOCOL_VERSION;
 	workerId: string;
 	windowName: string;
+	windowPid?: number;
 	workspaceRoots: string[];
 	models: ModelMetadata[];
 	presence: WorkerPresence;
