@@ -212,10 +212,12 @@ export default class JarvisSystemStatusExtension extends Extension {
       .map((actor) => actor.meta_window)
       .filter((candidate) => candidate?.get_wm_class()?.toLocaleLowerCase().includes('code'));
     const titleMatches = candidates.filter((candidate) => windowTitleMatches(candidate.get_title(), names));
-    const window = worker.windowPid
-      ? candidates.find((candidate) => candidate.get_pid() === worker.windowPid)
-        ?? (titleMatches.length === 1 ? titleMatches[0] : null)
-      : titleMatches.length === 1 ? titleMatches[0] : null;
+    const pidMatches = worker.windowPid
+      ? candidates.filter((candidate) => candidate.get_pid() === worker.windowPid)
+      : [];
+    const window = titleMatches.length === 1
+      ? titleMatches[0]
+      : pidMatches.length === 1 ? pidMatches[0] : null;
     if (window) {
       Main.activateWindow(window);
       return;

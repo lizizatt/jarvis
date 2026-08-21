@@ -20,7 +20,7 @@ import { WorkerManager } from './workers.js';
 
 interface IdParams { id: string }
 
-export async function createApp(config: ServerConfig): Promise<FastifyInstance> {
+export async function createApp(Clconfig: ServerConfig): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
   const store = new Store(join(config.dataDir, 'jarvis.sqlite3'));
   const interrupted = store.interruptActiveTasks();
