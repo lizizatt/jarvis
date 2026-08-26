@@ -14,4 +14,6 @@ blob-report/
 apps/vscode-worker/.vscode-test/
 apps/vscode-worker/out/
 apps/vscode-worker/*.vsix
+apps/vscode-worker/resources/__pycache__/
+.vscode/
 *.exr

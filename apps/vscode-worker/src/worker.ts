@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { promisify } from 'node:util';
 import * as vscode from 'vscode';
 import { runAgentTurn } from './agent';
 import { NativeChatActivityMonitor } from './nativeChatActivity';
@@ -16,6 +18,10 @@ import {
 } from './protocol';
 
 const ENABLED_KEY = 'jarvis-copilot-worker.enabled';
+const execFileAsync = promisify(execFile);
+const WINDOW_BRIDGE_BUS = 'org.gnome.Shell.Extensions.JarvisSystemStatus';
+const WINDOW_BRIDGE_PATH = '/org/gnome/Shell/Extensions/JarvisSystemStatus';
+const WINDOW_BRIDGE_INTERFACE = 'org.gnome.Shell.Extensions.JarvisSystemStatus';
 
 interface RunningTurn {
 	modelCancellation: vscode.CancellationTokenSource;
@@ -329,6 +335,7 @@ export class WorkerClient implements vscode.Disposable {
 
 	private sendHello(): void {
 		const { focused, active } = vscode.window.state;
+		this.announceWindowPresence(focused);
 		this.send({
 			type: 'hello',
 			version: WORKER_PROTOCOL_VERSION,
@@ -385,6 +392,16 @@ export class WorkerClient implements vscode.Disposable {
 
 	private workerId(): string {
 		return this.instanceWorkerId;
+	}
+
+	private announceWindowPresence(focused: boolean): void {
+		if (process.platform !== 'linux') {
+			return;
+		}
+		void execFileAsync('gdbus', [
+			'call', '--session', '--dest', WINDOW_BRIDGE_BUS, '--object-path', WINDOW_BRIDGE_PATH,
+			'--method', WINDOW_BRIDGE_INTERFACE + '.RegisterWorker', this.workerId(), focused ? 'true' : 'false',
+		], { timeout: 1000, maxBuffer: 1024 }).catch(() => { });
 	}
 
 	private isEnabled(): boolean {

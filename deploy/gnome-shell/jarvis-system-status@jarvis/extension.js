@@ -13,6 +13,17 @@ const POLL_INTERVAL_SECONDS = 2;
 const CREDIT_POLL_INTERVAL_SECONDS = 60;
 const DASHBOARD_URL = 'http://127.0.0.1:3210/';
 const SESSION_FLAGS = ['🏳️‍🌈', '🏳️‍⚧️'];
+const WINDOW_BRIDGE_BUS = 'org.gnome.Shell.Extensions.JarvisSystemStatus';
+const WINDOW_BRIDGE_PATH = '/org/gnome/Shell/Extensions/JarvisSystemStatus';
+const WINDOW_BRIDGE_XML = `
+<node>
+  <interface name="org.gnome.Shell.Extensions.JarvisSystemStatus">
+    <method name="RegisterWorker">
+      <arg type="s" name="workerId" direction="in"/>
+      <arg type="b" name="focused" direction="in"/>
+    </method>
+  </interface>
+</node>`;
 
 function percent(used, total) {
   return total > 0 ? Math.round((used / total) * 100) : 0;
@@ -37,7 +48,18 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._credits = this._clickableLabel(this._creditText, () => this._openUrl(DASHBOARD_URL));
     this._workersBox = new St.BoxLayout();
     this._workerActors = new Map();
+    this._workerWindows = new Map();
     this._workersRefreshInFlight = false;
+    const bridge = Gio.DBusExportedObject.wrapJSObject(WINDOW_BRIDGE_XML, this);
+    this._bridge = bridge;
+    this._bridgeBusOwner = Gio.bus_own_name(
+      Gio.BusType.SESSION,
+      WINDOW_BRIDGE_BUS,
+      Gio.BusNameOwnerFlags.NONE,
+      connection => { if (this._bridge === bridge) bridge.export(connection, WINDOW_BRIDGE_PATH); },
+      null,
+      () => { if (this._bridge === bridge) bridge.unexport(); },
+    );
     this._box.add_child(this._cpu);
     this._box.add_child(new St.Label({ text: '  ', y_align: Clutter.ActorAlign.CENTER }));
     this._box.add_child(this._memory);
@@ -80,8 +102,20 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._credits = null;
     this._workersBox = null;
     this._workerActors = null;
+    this._workerWindows = null;
     this._workersRefreshInFlight = false;
     this._sessionFlags = null;
+    const bridge = this._bridge;
+    this._bridge = null;
+    if (this._bridgeBusOwner) Gio.bus_unown_name(this._bridgeBusOwner);
+    this._bridgeBusOwner = null;
+    bridge?.unexport();
+  }
+
+  RegisterWorker(workerId, focused) {
+    if (typeof workerId !== 'string' || !focused || !this._workerWindows) return;
+    const window = global.display.get_focus_window();
+    if (isCodeWindow(window)) this._workerWindows.set(workerId, window);
   }
 
   _clickableLabel(text, activate) {
@@ -163,6 +197,9 @@ export default class JarvisSystemStatusExtension extends Extension {
       const workers = await this._fetch('workers');
       if (!workers || !this._workersBox) return;
       const currentWorkerIds = new Set(workers.map((worker) => worker.workerId));
+      for (const workerId of this._workerWindows.keys()) {
+        if (!currentWorkerIds.has(workerId)) this._workerWindows.delete(workerId);
+      }
       for (const [workerId, actor] of this._workerActors) {
         if (!currentWorkerIds.has(workerId)) {
           actor.destroy();
@@ -205,6 +242,12 @@ export default class JarvisSystemStatusExtension extends Extension {
   }
 
   _focusWorker(worker) {
+    const registeredWindow = this._workerWindows.get(worker.workerId);
+    if (registeredWindow?.get_compositor_private()) {
+      Main.activateWindow(registeredWindow);
+      return;
+    }
+    this._workerWindows.delete(worker.workerId);
     const names = [worker.windowName, ...(worker.workspaceRoots ?? []).map((root) => root.split('/').pop())]
       .filter((value) => typeof value === 'string' && value.trim())
       .map((value) => value.trim().toLocaleLowerCase());
@@ -226,12 +269,7 @@ export default class JarvisSystemStatusExtension extends Extension {
       console.warn(`Jarvis system status: multiple VS Code windows match ${worker.windowName}`);
       return;
     }
-    const workspaceRoot = worker.workspaceRoots?.[0];
-    try {
-      Gio.Subprocess.new(workspaceRoot ? ['code', '--reuse-window', workspaceRoot] : ['code'], Gio.SubprocessFlags.NONE);
-    } catch (error) {
-      console.error(`Jarvis system status: unable to focus ${worker.windowName}: ${error.message}`);
-    }
+    console.warn(`Jarvis system status: no unambiguous window found for ${worker.windowName}`);
   }
 
   _flagFor(workerId) {
@@ -249,4 +287,8 @@ function windowTitleMatches(title, names) {
   if (typeof title !== 'string' || !Array.isArray(names)) return false;
   const parts = title.split(' - ').map((part) => part.trim().toLocaleLowerCase());
   return names.some((name) => parts.includes(name));
+}
+
+function isCodeWindow(window) {
+  return window?.get_wm_class()?.toLocaleLowerCase().includes('code');
 }
