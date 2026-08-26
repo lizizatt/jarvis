@@ -4,7 +4,7 @@ Jarvis is deployed from the checkout and runs as three per-user systemd services
 
 ## First Installation
 
-Follow [Getting Started](GETTING_STARTED.md). The installer writes units under `~/.config/systemd/user`, copies `.env.sample` to `~/.config/jarvis/.env` when absent, builds the checkout, and starts all three services. It expects Jam Assistant at `~/scratch-2/jam_assistant` by default; override with `JARVIS_JAM_ASSISTANT_ROOT`.
+Follow [Getting Started](GETTING_STARTED.md). The installer writes units under `~/.config/systemd/user`, copies `.env.sample` to `~/.config/jarvis/.env` when absent, builds the checkout, and starts all three services. It expects Jam Assistant at `~/scratch1/jam_assistant` by default; override with `JARVIS_JAM_ASSISTANT_ROOT`.
 
 Do not copy service templates directly: the installer resolves checkout and executable paths.
 

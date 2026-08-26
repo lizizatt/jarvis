@@ -14,7 +14,7 @@ readonly JAM_SERVICE_NAME="jarvis-jam-assistant"
 readonly NODE_EXECUTABLE="$(command -v node || true)"
 readonly COPILOT_EXECUTABLE="$(command -v copilot || true)"
 readonly TAILSCALE_EXECUTABLE="$(command -v tailscale || true)"
-readonly JAM_ASSISTANT_ROOT="${JARVIS_JAM_ASSISTANT_ROOT:-${HOME}/scratch-2/jam_assistant}"
+readonly JAM_ASSISTANT_ROOT="${JARVIS_JAM_ASSISTANT_ROOT:-${HOME}/scratch1/jam_assistant}"
 readonly TOOL_PATH="$(dirname "$NODE_EXECUTABLE"):$(dirname "$COPILOT_EXECUTABLE")"
 
 echo "=== Jarvis Systemd Installation ==="
