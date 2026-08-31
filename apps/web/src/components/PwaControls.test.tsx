@@ -5,6 +5,7 @@ import { PwaControls } from './PwaControls';
 
 afterEach(() => {
   window.localStorage.removeItem('jarvis.frostBlur.px');
+  window.localStorage.removeItem('jarvis.motionLpfTauMs');
   document.documentElement.style.removeProperty('--panel-blur');
 });
 
@@ -25,6 +26,17 @@ test('persists the selected frame rate cap', async () => {
 
   await userEvent.selectOptions(select, '30');
   expect(window.localStorage.getItem('jarvis.sigilFrameRate.fps')).toBe('30');
+});
+
+test('persists the selected motion smoothing amount', async () => {
+  render(<MemoryRouter><PwaControls /></MemoryRouter>);
+  await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+  const slider = screen.getByLabelText('Motion smoothing');
+  expect(slider).toHaveValue('80');
+
+  fireEvent.change(slider, { target: { value: '120' } });
+  expect(window.localStorage.getItem('jarvis.motionLpfTauMs')).toBe('120');
 });
 
 test('persists the selected frosting amount', async () => {

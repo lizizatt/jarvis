@@ -18,10 +18,7 @@ export interface HelloMessage {
 	workspaceRoots: string[];
 	models: ModelMetadata[];
 	presence: WorkerPresence;
-	nativeChatActivity: WorkerActivity;
 }
-
-export type WorkerActivity = 'idle' | 'thinking' | 'needs-input';
 
 export interface WorkerPresence {
 	focused: boolean;

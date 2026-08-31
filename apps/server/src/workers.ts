@@ -15,7 +15,6 @@ interface WorkerHello {
   workspaceRoots: string[];
   models: ModelMetadata[];
   presence?: WorkerPresence;
-  nativeChatActivity?: WorkerActivity;
 }
 
 export interface ModelMetadata {
@@ -70,7 +69,6 @@ interface WorkerConnection extends WorkerStatus {
   alive: boolean;
   tasks: Map<string, WorkerTurnCallbacks>;
   taskActivities: Map<string, Exclude<WorkerActivity, 'idle'>>;
-  nativeChatActivity: WorkerActivity;
   heartbeat: NodeJS.Timeout;
 }
 
@@ -109,8 +107,8 @@ export class WorkerManager {
 
   list(): WorkerStatus[] {
     return [...this.workers.values()].map(({ workerId, windowName, windowPid, workspaceRoots, models, connectedAt, activeTaskIds, taskActivities,
-      nativeChatActivity, presence }) => ({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds: [...activeTaskIds],
-        windowPid, activity: workerActivity(taskActivities, nativeChatActivity), presence }));
+      presence }) => ({ workerId, windowName, workspaceRoots, models, connectedAt, activeTaskIds: [...activeTaskIds],
+        windowPid, activity: workerActivity(taskActivities), presence }));
   }
 
   hasWorker(repositoryPath: string): boolean {
@@ -157,7 +155,7 @@ export class WorkerManager {
     const connectedAt = new Date().toISOString();
     const worker: WorkerConnection = { socket, workerId: hello.workerId, windowName: hello.windowName, windowPid: hello.windowPid,
       workspaceRoots, models: hello.models, connectedAt, activeTaskIds: [], presence: hello.presence ?? defaultPresence(connectedAt),
-      activity: 'idle', nativeChatActivity: hello.nativeChatActivity ?? 'idle', alive: true, tasks: new Map(), taskActivities: new Map(),
+      activity: 'idle', alive: true, tasks: new Map(), taskActivities: new Map(),
       heartbeat: undefined as unknown as NodeJS.Timeout };
     worker.heartbeat = setInterval(() => {
       if (!worker.alive) { worker.socket.terminate(); return; }
@@ -184,7 +182,6 @@ export class WorkerManager {
     worker.workspaceRoots = workspaceRoots;
     worker.models = hello.models;
     worker.presence = hello.presence ?? worker.presence;
-    worker.nativeChatActivity = hello.nativeChatActivity ?? worker.nativeChatActivity;
   }
 
   private handle(worker: WorkerConnection, message: Exclude<WorkerMessage, WorkerHello>): void {
@@ -217,10 +214,10 @@ export class WorkerManager {
   }
 }
 
-function workerActivity(taskActivities: Map<string, Exclude<WorkerActivity, 'idle'>>, nativeChatActivity: WorkerActivity): WorkerActivity {
-  return nativeChatActivity === 'needs-input' || [...taskActivities.values()].includes('needs-input')
+function workerActivity(taskActivities: Map<string, Exclude<WorkerActivity, 'idle'>>): WorkerActivity {
+  return [...taskActivities.values()].includes('needs-input')
     ? 'needs-input'
-    : nativeChatActivity === 'thinking' || taskActivities.size > 0 ? 'thinking' : 'idle';
+    : taskActivities.size > 0 ? 'thinking' : 'idle';
 }
 
 function isInputRequest(kind: string, payload: unknown): boolean {
@@ -235,8 +232,7 @@ function parseMessage(raw: string): WorkerMessage {
   if (message.type === 'hello') {
     if (!isString(message.workerId) || !isString(message.windowName) || (message.windowPid !== undefined && !isPositiveInteger(message.windowPid)) || !isStrings(message.workspaceRoots)
       || !Array.isArray(message.models) || !message.models.every(isModelMetadata)
-      || (message.presence !== undefined && !isWorkerPresence(message.presence))
-      || (message.nativeChatActivity !== undefined && !isWorkerActivity(message.nativeChatActivity))) {
+      || (message.presence !== undefined && !isWorkerPresence(message.presence))) {
       throw new Error('Invalid worker hello');
     }
     return message as WorkerHello;
@@ -263,9 +259,6 @@ function isWorkerPresence(value: unknown): value is WorkerPresence {
   if (typeof value !== 'object' || value === null) return false;
   const presence = value as Record<string, unknown>;
   return typeof presence.focused === 'boolean' && typeof presence.active === 'boolean' && isString(presence.updatedAt);
-}
-function isWorkerActivity(value: unknown): value is WorkerActivity {
-  return value === 'idle' || value === 'thinking' || value === 'needs-input';
 }
 function defaultPresence(updatedAt: string): WorkerPresence { return { focused: false, active: false, updatedAt }; }
 function recordPayload(value: unknown): Record<string, unknown> {

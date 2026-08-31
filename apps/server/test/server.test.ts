@@ -443,20 +443,12 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
       activeTaskIds: [], activity: 'idle', presence: { focused: true, active: true },
     }]);
     worker.socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
-      workspaceRoots: [workerRoot], models: [], nativeChatActivity: 'thinking',
+      workspaceRoots: [workerRoot], models: [],
       presence: { focused: false, active: true, updatedAt: new Date().toISOString() } }));
     await waitFor(async () => (await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].presence.focused === false);
     expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()[0]).toMatchObject({
-      activity: 'thinking', presence: { focused: false, active: true },
+      activity: 'idle', presence: { focused: false, active: true },
     });
-    worker.socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
-      workspaceRoots: [workerRoot], models: [], nativeChatActivity: 'needs-input',
-      presence: { focused: false, active: true, updatedAt: new Date().toISOString() } }));
-    await waitFor(async () => (await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity === 'needs-input');
-    worker.socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
-      workspaceRoots: [workerRoot], models: [], nativeChatActivity: 'idle',
-      presence: { focused: false, active: true, updatedAt: new Date().toISOString() } }));
-    await waitFor(async () => (await app.inject({ method: 'GET', url: '/api/workers' })).json()[0].activity === 'idle');
     const task = (await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/tasks`,
       payload: { prompt: 'worker first' } })).json() as Task;
     const firstTurn = await takeWorkerMessage(worker, 'turn');

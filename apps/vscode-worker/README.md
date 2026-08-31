@@ -1,6 +1,6 @@
 # Jarvis Copilot Worker
 
-This VS Code extension connects open workspace roots to Jarvis through the public VS Code Language Model API. On Linux it can observe visible Copilot Chat controls through AT-SPI to report activity. It does not inspect chat text or private Copilot storage.
+This VS Code extension connects open workspace roots to Jarvis through the public VS Code Language Model API. It does not inspect Copilot Chat UI, chat text, or private Copilot storage.
 
 ## Connect
 
@@ -23,9 +23,6 @@ The capability test makes a small model request and is never run automatically.
 
 - `jarvisCopilotWorker.serverUrl`: worker WebSocket URL; default `ws://127.0.0.1:3210/ws/workers`.
 - `jarvisCopilotWorker.preferredModel`: model ID, family, or display name; default `auto`.
-- `jarvisCopilotWorker.nativeChatActivity.enabled`: enable Linux AT-SPI activity observation; default `true`.
-
-Native chat activity requires `/usr/bin/python3`, the `Atspi` PyGObject binding, and `"editor.accessibilitySupport": "on"` in VS Code settings. When needed, the extension offers an **Enable and Reload** action before changing that global setting. The observer reads only visible button roles, button names, and ancestor container names, then emits `idle`, `thinking`, or `needs-input`.
 
 ## Contract
 

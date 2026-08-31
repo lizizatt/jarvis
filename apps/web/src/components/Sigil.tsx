@@ -9,6 +9,7 @@ import {
   setMotionBackgroundEnabled
 } from '../motion';
 import { SIGIL_FRAME_RATE_EVENT, getSigilFrameRate } from '../renderSettings';
+import { MOTION_LPF_TAU_EVENT, getMotionLpfTauMs } from '../motionFilterSettings';
 import {
   applyDeadZone,
   clamp,
@@ -36,7 +37,6 @@ const MOTION_SMOOTHING_TIME_MS = 80;
 // Time-constant for the quaternion-domain input low-pass filter applied once
 // per sensor sample (~60 Hz). Pre-smoothing the raw IMU reading before angle
 // extraction eliminates jitter the downstream lerp alone cannot remove.
-const SENSOR_LPF_TAU_MS = 40;
 
 function readHorizonDebugFlag() {
   if (typeof window === 'undefined') return false;
@@ -90,6 +90,7 @@ export function AmbientSigil() {
     let unwrappedYaw = 0;
     let currentRoll = 0;
     let targetRoll = 0;
+    let sensorLpfTauMs = getMotionLpfTauMs();
 
     renderer?.setHorizonDebug(horizonDebug);
 
@@ -123,7 +124,7 @@ export function AmbientSigil() {
       const now = performance.now();
       const dtMs = lastSensorSampleTime > 0 ? Math.min(now - lastSensorSampleTime, 100) : 16;
       lastSensorSampleTime = now;
-      const lpfAlpha = 1 - Math.exp(-dtMs / SENSOR_LPF_TAU_MS);
+      const lpfAlpha = sensorLpfTauMs <= 0 ? 1 : 1 - Math.exp(-dtMs / sensorLpfTauMs);
       if (!smoothedQuaternion) {
         // First sample: snap immediately and pretend the previous frame was
         // 16 ms ago so the next event gets a sensible lpfAlpha regardless of
@@ -314,7 +315,11 @@ export function AmbientSigil() {
       frameInterval = 1000 / (fps > 0 ? fps : getSigilFrameRate());
       lastDrawTime = -Infinity;
     };
+    const onMotionLpfTauChange = (event: Event) => {
+      sensorLpfTauMs = (event as CustomEvent<number>).detail;
+    };
     window.addEventListener(SIGIL_FRAME_RATE_EVENT, onFrameRateChange as EventListener);
+    window.addEventListener(MOTION_LPF_TAU_EVENT, onMotionLpfTauChange as EventListener);
 
     drawScene();
     frame = window.requestAnimationFrame(animate);
@@ -331,6 +336,7 @@ export function AmbientSigil() {
       window.removeEventListener(MOTION_PERMISSION_EVENT, onPermissionChange as EventListener);
       window.removeEventListener(MOTION_BACKGROUND_EVENT, onMotionBackgroundChange as EventListener);
       window.removeEventListener(SIGIL_FRAME_RATE_EVENT, onFrameRateChange as EventListener);
+      window.removeEventListener(MOTION_LPF_TAU_EVENT, onMotionLpfTauChange as EventListener);
       renderer?.dispose();
     };
   }, []);

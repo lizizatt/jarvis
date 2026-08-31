@@ -54,11 +54,6 @@
           "type": "string",
           "default": "auto",
           "description": "Preferred Copilot model ID, family, or name. Falls back to the first available model."
-        },
-        "jarvisCopilotWorker.nativeChatActivity.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "On Linux, observe visible Copilot Chat controls through AT-SPI to report thinking and needs-input status. No chat text is read or transmitted."
         }
       }
     }
