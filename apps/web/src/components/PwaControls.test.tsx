@@ -17,6 +17,15 @@ test('renders settings above page content in the document layer', async () => {
   expect(document.querySelector('.modal-backdrop')?.parentElement).toBe(document.body);
 });
 
+test('links the gear menu to unified host controls', async () => {
+  render(<MemoryRouter><PwaControls /></MemoryRouter>);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+  expect(screen.getByRole('link', { name: 'Open host controls' })).toHaveAttribute('href', '/settings');
+  expect(screen.getByText('Manage deployments and private Tailnet access.')).toBeVisible();
+});
+
 test('persists the selected frame rate cap', async () => {
   render(<MemoryRouter><PwaControls /></MemoryRouter>);
   await userEvent.click(screen.getByRole('button', { name: 'Settings' }));

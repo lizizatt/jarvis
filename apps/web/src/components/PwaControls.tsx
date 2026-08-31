@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Bell, Compass, Download, Radio, Settings as SettingsIcon, X } from 'lucide-react';
+import { Bell, Compass, Download, Settings as SettingsIcon, X } from 'lucide-react';
 import { api } from '../api';
 import {
   announceMotionPermission,
@@ -101,7 +101,7 @@ export function PwaControls() {
       <div className="setting-row"><div><strong>Animation frame rate</strong><p>Cap how often the digital window redraws. Lower saves battery.</p></div><label className="sr-only" htmlFor="frame-rate">Animation frame rate</label><select id="frame-rate" value={frameRate} onChange={(event) => { const fps = Number(event.currentTarget.value); setFrameRate(fps); setSigilFrameRate(fps); }}>{SIGIL_FRAME_RATE_OPTIONS.map((fps) => <option key={fps} value={fps}>{fps} fps</option>)}</select></div>
       <div className="setting-row"><div><strong>Motion smoothing</strong><p>Adjust local low-pass filter duration for digital window motion input.</p></div><div className="frost-control"><input type="range" id="motion-lpf" aria-label="Motion smoothing" min={MOTION_LPF_TAU_MIN} max={MOTION_LPF_TAU_MAX} step={1} value={motionLpfTauMs} onChange={(event) => { const tau = Number(event.currentTarget.value); setMotionLpfTauMsState(tau); setMotionLpfTauMs(tau); }} /><span>{motionLpfTauMs}ms</span></div></div>
       <div className="setting-row"><div><strong>Frosting</strong><p>Blur the digital window behind repository cards and chat entries.</p></div><div className="frost-control"><input type="range" id="frost-blur" aria-label="Frosting" min={0} max={FROST_BLUR_MAX} step={1} value={frostBlur} onChange={(event) => { const px = Number(event.currentTarget.value); setFrostBlurState(px); setFrostBlur(px); }} /><span>{frostBlur}px</span></div></div>
-      <div className="setting-row"><div><strong>Tailnet access</strong><p>Expose a local port through Tailscale.</p></div><Link className="button secondary" to="/settings" onClick={() => setOpen(false)}><Radio size={17} />Open</Link></div>
+      <div className="setting-row"><div><strong>Host controls</strong><p>Manage deployments and private Tailnet access.</p></div><Link className="button secondary" to="/settings" aria-label="Open host controls" onClick={() => setOpen(false)}><SettingsIcon size={17} />Open</Link></div>
       {message && <p className="notice">{message}</p>}
     </section></div>, document.body)}
   </>;
