@@ -83,3 +83,16 @@ export interface PreviewFile { path: string; kind: 'readme' | 'html' }
 export interface TerminalSession { id: string; name?: string; status?: 'new' | 'running' | 'exited'; columns?: number; rows?: number }
 export interface CopilotUsage { creditsUsed: number; quotaResetDate: string; timestamp: string }
 export interface PortForward { port: number; url: string }
+export type DeploymentAction = 'start' | 'stop' | 'restart';
+export type DeploymentState = 'running' | 'stopped' | 'starting' | 'stopping' | 'failed' | 'unavailable';
+export interface Deployment {
+  id: string;
+  name: string;
+  kind: 'managed' | 'self';
+  state: DeploymentState;
+  enabled: boolean;
+  healthy: boolean | null;
+  actions: DeploymentAction[];
+  warning?: string;
+  detail?: string;
+}

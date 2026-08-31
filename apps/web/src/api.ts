@@ -1,4 +1,4 @@
-import type { CopilotUsage, HostMetrics, ModelMetadata, PortForward, PreviewFile, PullRequest, Repository, RepositoryStatus, RepositoryStatusFile, TaskEvent, TaskSummary, TerminalSession } from './types';
+import type { CopilotUsage, Deployment, DeploymentAction, HostMetrics, ModelMetadata, PortForward, PreviewFile, PullRequest, Repository, RepositoryStatus, RepositoryStatusFile, TaskEvent, TaskSummary, TerminalSession } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body !== undefined && init.body !== null;
@@ -106,6 +106,9 @@ export const api = {
   portForwards: () => request<PortForward[]>('/api/settings/port-forwards'),
   exposePort: (port: number) => request<PortForward>('/api/settings/port-forwards', { method: 'POST', body: JSON.stringify({ port }) }),
   closePort: (port: number) => request<void>(`/api/settings/port-forwards/${port}`, { method: 'DELETE' }),
+  deployments: () => request<Deployment[]>('/api/deployments'),
+  deploymentAction: (id: string, action: DeploymentAction) => request<{ accepted: true; scheduled: boolean }>(`/api/deployments/${id}/actions`, { method: 'POST', body: JSON.stringify({ action }) }),
+  health: () => request<{ ok: true }>('/api/health'),
   vapidKey: async () => ({ publicKey: (await request<{ vapidPublicKey: string }>('/api/config')).vapidPublicKey }),
   subscribePush: (subscription: PushSubscriptionJSON) => request<void>('/api/push/subscriptions', { method: 'POST', body: JSON.stringify(subscription) }),
   unsubscribePush: (endpoint: string) => request<void>('/api/push/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint }) })

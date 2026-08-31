@@ -94,6 +94,25 @@ pre { font-family: 'IBM Plex Mono', monospace; }
 .port-forward-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
 .port-forward-form .button { min-width: 146px; }
 .settings-section .notice { margin: 0; }
+.deployment-list { display: grid; gap: 8px; }
+.deployment-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 68px; padding: 11px 12px 11px 14px; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--gold); }
+.deployment-summary { min-width: 0; }
+.deployment-summary > div { display: flex; align-items: center; gap: 9px; }
+.deployment-summary strong { overflow: hidden; font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
+.deployment-summary p { margin: 5px 0 0; color: var(--muted); font-size: .7rem; overflow-wrap: anywhere; }
+.deployment-state { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: .62rem; font-weight: 700; text-transform: uppercase; }
+.deployment-state.running { color: var(--green); }
+.deployment-state.failed, .deployment-state.unavailable { color: #ff7176; }
+.deployment-state.starting, .deployment-state.stopping { color: var(--gold); }
+.deployment-actions { display: flex; align-items: center; gap: 7px; }
+.deployment-switch { position: relative; display: inline-flex; width: 54px; height: 32px; align-items: center; justify-content: flex-end; padding: 0 8px; color: var(--muted); background: #0d1010; border: 1px solid var(--line); border-radius: 16px; }
+.deployment-switch span { position: absolute; left: 3px; width: 24px; height: 24px; background: var(--muted); border-radius: 50%; transition: left .16s ease, background .16s ease; }
+.deployment-switch[aria-checked="true"] { justify-content: flex-start; color: #0d1010; background: var(--green-wash); border-color: rgb(72 207 128 / 52%); }
+.deployment-switch[aria-checked="true"] span { left: 25px; background: var(--green); }
+.deployment-switch:disabled { opacity: .5; }
+.deployment-switch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .port-forward-result { display: grid; gap: 7px; padding: 14px; background: var(--green-wash); border: 1px solid rgb(72 207 128 / 32%); border-left: 3px solid var(--green); }
 .port-forward-result span { color: var(--muted); font-size: .68rem; font-weight: 700; text-transform: uppercase; }
 .port-forward-result a { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; color: var(--green); font-family: 'IBM Plex Mono', monospace; font-size: .78rem; overflow-wrap: anywhere; }
