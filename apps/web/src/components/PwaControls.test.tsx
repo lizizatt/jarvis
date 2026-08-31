@@ -24,6 +24,7 @@ test('links the gear menu to unified host controls', async () => {
 
   expect(screen.getByRole('link', { name: 'Open host controls' })).toHaveAttribute('href', '/settings');
   expect(screen.getByText('Manage deployments and private Tailnet access.')).toBeVisible();
+  expect(document.querySelector('.setting-row')).toHaveTextContent('Host controls');
 });
 
 test('persists the selected frame rate cap', async () => {
