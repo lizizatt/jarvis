@@ -10,12 +10,16 @@ readonly SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 readonly JARVIS_CONFIG_DIR="${HOME}/.config/jarvis"
 readonly SERVICE_NAME="jarvis"
 readonly TERMINAL_SERVICE_NAME="jarvis-terminal-host"
-readonly JAM_SERVICE_NAME="jarvis-jam-assistant"
 readonly NODE_EXECUTABLE="$(command -v node || true)"
 readonly COPILOT_EXECUTABLE="$(command -v copilot || true)"
-readonly TAILSCALE_EXECUTABLE="$(command -v tailscale || true)"
-readonly JAM_ASSISTANT_ROOT="${JARVIS_JAM_ASSISTANT_ROOT:-${HOME}/scratch/jam_assistant}"
 readonly TOOL_PATH="$(dirname "$NODE_EXECUTABLE"):$(dirname "$COPILOT_EXECUTABLE")"
+readonly DEPLOYMENT_REGISTRY="${JARVIS_DEPLOYMENT_REGISTRY:-${JARVIS_CONFIG_DIR}/deployments.json}"
+readonly DEPLOYMENT_INDEX="${JARVIS_CONFIG_DIR}/deployments.tsv"
+readonly JAM_MANIFEST="${JARVIS_JAM_ASSISTANT_MANIFEST:-${HOME}/scratch/jam_assistant/jarvis.deployment.json}"
+readonly ALESIS_MANIFEST="${JARVIS_ALESIS_MANIFEST:-${HOME}/scratch/alesis/jarvis.deployment.json}"
+readonly DEPLOYMENT_TEMPLATE="$SCRIPT_DIR/managed-deployment.service.template"
+readonly RECONCILE_TOOL="$REPO_ROOT/tools/reconcile-deployments.mjs"
+readonly DEPLOYMENT_MANIFESTS=("$REPO_ROOT/jarvis.deployment.json" "$JAM_MANIFEST" "$ALESIS_MANIFEST")
 
 echo "=== Jarvis Systemd Installation ==="
 echo "Repository: $REPO_ROOT"
@@ -30,11 +34,12 @@ for cmd in node npm tailscale curl; do
     exit 1
   fi
 done
-if [[ ! -f "$JAM_ASSISTANT_ROOT/package.json" ]]; then
-  echo "ERROR: Jam Assistant package.json not found at $JAM_ASSISTANT_ROOT"
-  echo "Set JARVIS_JAM_ASSISTANT_ROOT if the checkout lives elsewhere."
-  exit 1
-fi
+for manifest in "${DEPLOYMENT_MANIFESTS[@]}"; do
+  if [[ ! -f "$manifest" ]]; then
+    echo "ERROR: Deployment manifest not found at $manifest"
+    exit 1
+  fi
+done
 
 NODE_VERSION=$(node --version | sed 's/v//')
 echo "  ✓ Node.js $NODE_VERSION"
@@ -69,22 +74,15 @@ echo ""
 echo "[4/6] Installing systemd service..."
 mkdir -p "$SYSTEMD_USER_DIR"
 
-# Substitute paths in template and install
+# Substitute paths in templates and reconcile project-owned declarations
 SERVICE_FILE="$SYSTEMD_USER_DIR/${SERVICE_NAME}.service"
 TERMINAL_SERVICE_FILE="$SYSTEMD_USER_DIR/${TERMINAL_SERVICE_NAME}.service"
-JAM_SERVICE_FILE="$SYSTEMD_USER_DIR/${JAM_SERVICE_NAME}.service"
 TERMINAL_RUNNER="$JARVIS_CONFIG_DIR/run-terminal-host.sh"
-JAM_RUNNER="$JARVIS_CONFIG_DIR/run-jam-assistant.sh"
 sed \
   -e "s|@@REPO_ROOT@@|$REPO_ROOT|g" \
   -e "s|@@NODE_EXECUTABLE@@|$NODE_EXECUTABLE|g" \
   "$SCRIPT_DIR/terminal-host.sh.template" > "$TERMINAL_RUNNER"
 chmod 700 "$TERMINAL_RUNNER"
-sed \
-  -e "s|@@JAM_ASSISTANT_ROOT@@|$JAM_ASSISTANT_ROOT|g" \
-  -e "s|@@TAILSCALE_EXECUTABLE@@|$TAILSCALE_EXECUTABLE|g" \
-  "$SCRIPT_DIR/jam-assistant-runner.sh.template" > "$JAM_RUNNER"
-chmod 700 "$JAM_RUNNER"
 sed \
   -e "s|%h|$HOME|g" \
   -e "s|@@REPO_ROOT@@|$REPO_ROOT|g" \
@@ -96,15 +94,18 @@ sed \
   -e "s|@@REPO_ROOT@@|$REPO_ROOT|g" \
   -e "s|@@TERMINAL_RUNNER@@|$TERMINAL_RUNNER|g" \
   "$SCRIPT_DIR/jarvis-terminal-host.service.template" > "$TERMINAL_SERVICE_FILE"
-sed \
-  -e "s|%h|$HOME|g" \
-  -e "s|@@JAM_ASSISTANT_ROOT@@|$JAM_ASSISTANT_ROOT|g" \
-  -e "s|@@TAILSCALE_EXECUTABLE@@|$TAILSCALE_EXECUTABLE|g" \
-  -e "s|@@TOOL_PATH@@|$TOOL_PATH|g" \
-  -e "s|@@JAM_RUNNER@@|$JAM_RUNNER|g" \
-  "$SCRIPT_DIR/jarvis-jam-assistant.service.template" > "$JAM_SERVICE_FILE"
+PATH="$TOOL_PATH:$PATH" "$NODE_EXECUTABLE" "$RECONCILE_TOOL" --build --output "$DEPLOYMENT_INDEX" \
+  --registry "$DEPLOYMENT_REGISTRY" --systemd-dir "$SYSTEMD_USER_DIR" --template "$DEPLOYMENT_TEMPLATE" \
+  "${DEPLOYMENT_MANIFESTS[@]}"
+managed_units=()
+health_urls=()
+while IFS=$'\t' read -r unit health_url; do
+  [[ -z "$unit" ]] && continue
+  managed_units+=("$unit")
+  [[ -z "$health_url" ]] || health_urls+=("$health_url")
+done < "$DEPLOYMENT_INDEX"
 
-echo "  ✓ Installed $SERVICE_FILE, $TERMINAL_SERVICE_FILE, and $JAM_SERVICE_FILE"
+echo "  ✓ Installed Jarvis and ${#managed_units[@]} managed deployment units"
 echo ""
 
 # Enable and start the service
@@ -112,9 +113,9 @@ echo "[5/6] Enabling and starting service..."
 systemctl --user daemon-reload
 systemctl --user enable "$TERMINAL_SERVICE_NAME"
 systemctl --user enable "$SERVICE_NAME"
-systemctl --user enable "$JAM_SERVICE_NAME"
+systemctl --user enable "${managed_units[@]}"
 systemctl --user restart "$TERMINAL_SERVICE_NAME"
-systemctl --user restart "$JAM_SERVICE_NAME"
+systemctl --user restart "${managed_units[@]}"
 systemctl --user restart "$SERVICE_NAME"
 echo "  ✓ Service enabled and started"
 echo ""
@@ -123,10 +124,13 @@ echo ""
 echo "[6/6] Verifying installation..."
 ready=''
 for attempt in $(seq 1 60); do
-  if systemctl --user is-active "$SERVICE_NAME" > /dev/null \
-    && systemctl --user is-active "$JAM_SERVICE_NAME" > /dev/null \
-    && curl --fail --silent --show-error --max-time 1 http://127.0.0.1:3210/api/health > /dev/null \
-    && curl --fail --silent --show-error --max-time 1 http://127.0.0.1:4173/ > /dev/null; then
+  healthy=true
+  systemctl --user is-active "$SERVICE_NAME" "${managed_units[@]}" > /dev/null || healthy=false
+  curl --fail --silent --show-error --max-time 1 http://127.0.0.1:3210/api/health > /dev/null || healthy=false
+  for health_url in "${health_urls[@]}"; do
+    curl --fail --silent --show-error --max-time 1 "$health_url" > /dev/null || healthy=false
+  done
+  if [[ "$healthy" == true ]]; then
     ready=true
     break
   fi
@@ -139,11 +143,11 @@ if [[ -n "$ready" ]]; then
   echo ""
   echo "To check status:"
   echo "  systemctl --user status $SERVICE_NAME"
-  echo "  systemctl --user status $JAM_SERVICE_NAME"
+  echo "  systemctl --user status ${managed_units[*]}"
   echo ""
   echo "To view logs:"
   echo "  journalctl --user -u $SERVICE_NAME -f"
-  echo "  journalctl --user -u $JAM_SERVICE_NAME -f"
+  echo "  journalctl --user ${managed_units[*]/#/-u } -f"
   echo ""
   echo "To stop the service:"
   echo "  systemctl --user stop $SERVICE_NAME"
@@ -152,10 +156,10 @@ if [[ -n "$ready" ]]; then
   echo ""
   echo "To enable phone access over Tailscale, run on this laptop:"
   echo "  tailscale serve --bg http://127.0.0.1:3210"
-  echo "  # Jam Assistant is managed privately at https://<tailnet-host>:4173/"
+  echo "  # Managed deployments publish their declared private Tailscale endpoints."
   echo ""
 else
   echo "  ✗ Services failed readiness verification. Check logs:"
-  echo "  journalctl --user -u $SERVICE_NAME -u $JAM_SERVICE_NAME -n 40"
+  echo "  journalctl --user -u $SERVICE_NAME ${managed_units[*]/#/-u } -n 40"
   exit 1
 fi

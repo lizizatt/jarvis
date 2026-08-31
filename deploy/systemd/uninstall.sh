@@ -8,7 +8,18 @@ readonly SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 readonly JARVIS_CONFIG_DIR="${HOME}/.config/jarvis"
 readonly SERVICE_NAME="jarvis"
 readonly TERMINAL_SERVICE_NAME="jarvis-terminal-host"
-readonly JAM_SERVICE_NAME="jarvis-jam-assistant"
+readonly DEPLOYMENT_REGISTRY="${JARVIS_DEPLOYMENT_REGISTRY:-${JARVIS_CONFIG_DIR}/deployments.json}"
+managed_units=()
+if [[ -f "$DEPLOYMENT_REGISTRY" ]]; then
+  while IFS= read -r unit; do managed_units+=("$unit"); done < <(node -e '
+    const fs = require("node:fs");
+    const registry = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    for (const manifestPath of registry.manifests ?? []) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      if (manifest.kind === "managed" && /^jarvis-[a-z0-9-]+\.service$/.test(manifest.systemdUnit)) console.log(manifest.systemdUnit);
+    }
+  ' "$DEPLOYMENT_REGISTRY")
+fi
 
 echo "=== Jarvis Systemd Uninstallation ==="
 echo ""
@@ -47,14 +58,14 @@ else
   echo "  ℹ Service was not running"
 fi
 systemctl --user stop "$TERMINAL_SERVICE_NAME" > /dev/null 2>&1 || true
-systemctl --user stop "$JAM_SERVICE_NAME" > /dev/null 2>&1 || true
+if (( ${#managed_units[@]} > 0 )); then systemctl --user stop "${managed_units[@]}" > /dev/null 2>&1 || true; fi
 echo ""
 
 # Disable the service
 echo "[2/4] Disabling service..."
 systemctl --user disable "$SERVICE_NAME" > /dev/null 2>&1 || true
 systemctl --user disable "$TERMINAL_SERVICE_NAME" > /dev/null 2>&1 || true
-systemctl --user disable "$JAM_SERVICE_NAME" > /dev/null 2>&1 || true
+if (( ${#managed_units[@]} > 0 )); then systemctl --user disable "${managed_units[@]}" > /dev/null 2>&1 || true; fi
 echo "  ✓ Service disabled"
 echo ""
 
@@ -62,7 +73,7 @@ echo ""
 echo "[3/4] Removing systemd unit file..."
 rm -f "$SERVICE_FILE"
 rm -f "$SYSTEMD_USER_DIR/${TERMINAL_SERVICE_NAME}.service" "$JARVIS_CONFIG_DIR/run-terminal-host.sh"
-rm -f "$SYSTEMD_USER_DIR/${JAM_SERVICE_NAME}.service" "$JARVIS_CONFIG_DIR/run-jam-assistant.sh"
+for unit in "${managed_units[@]}"; do rm -f "$SYSTEMD_USER_DIR/$unit"; done
 systemctl --user daemon-reload
 echo "  ✓ Removed $SERVICE_FILE"
 echo ""

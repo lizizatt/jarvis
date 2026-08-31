@@ -3,7 +3,6 @@ Description=Jarvis Developer Control Plane
 Documentation=https://github.com/saildrone/jarvis
 Wants=network-online.target
 Wants=jarvis-terminal-host.service
-Wants=jarvis-jam-assistant.service
 After=network-online.target tailscaled.service jarvis-terminal-host.service
 ConditionUser=!root
 

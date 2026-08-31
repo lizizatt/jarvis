@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "jarvis",
+  "name": "Jarvis",
+  "kind": "self",
+  "systemdUnit": "jarvis.service",
+  "healthUrl": "http://127.0.0.1:3210/api/health",
+  "actions": ["restart"],
+  "warning": "Restarting Jarvis may interrupt active work and temporarily disconnect this dashboard. Things might be weird until it reconnects."
+}

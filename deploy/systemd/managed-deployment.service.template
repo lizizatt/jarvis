@@ -1,0 +1,21 @@
+[Unit]
+Description=Jarvis managed deployment: @@DISPLAY_NAME@@
+Documentation="file://@@MANIFEST_PATH@@"
+Wants=network-online.target
+After=network-online.target tailscaled.service
+ConditionUser=!root
+
+[Service]
+Type=simple
+WorkingDirectory=@@PROJECT_ROOT@@
+EnvironmentFile=-%h/.config/jarvis/.env
+Environment="PATH=@@TOOL_PATH@@"
+ExecStart="@@RUNNER_PATH@@"
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

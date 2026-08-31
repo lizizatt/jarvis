@@ -77,9 +77,9 @@ printf 'systemd-run %s\n' "$*" >> '${calls}'
   await chmod(systemctl, 0o700);
   await chmod(systemdRun, 0o700);
   await writeFile(alesis, JSON.stringify({ version: 1, id: 'alesis', name: 'Alesis', kind: 'managed',
-    unit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', actions: ['start', 'stop', 'restart'] }));
+    systemdUnit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', actions: ['start', 'stop', 'restart'] }));
   await writeFile(jarvis, JSON.stringify({ version: 1, id: 'jarvis', name: 'Jarvis', kind: 'self',
-    unit: 'jarvis.service', actions: ['restart'], warning: 'May interrupt active work.' }));
+    systemdUnit: 'jarvis.service', actions: ['restart'], warning: 'May interrupt active work.' }));
   await writeFile(registry, JSON.stringify({ version: 1, manifests: [alesis, jarvis] }));
   return { root, registry, systemctl, systemdRun, calls };
 }

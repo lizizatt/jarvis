@@ -16,8 +16,9 @@ export interface DeploymentManifest {
   id: string;
   name: string;
   kind: 'managed' | 'self';
-  unit: string;
+  systemdUnit: string;
   runner?: string;
+  build?: string[];
   healthUrl?: string;
   actions: DeploymentAction[];
   warning?: string;
@@ -62,18 +63,18 @@ export class DeploymentManager {
       const transientUnit = `jarvis-self-restart-${Date.now()}`;
       await execFileAsync(this.systemdRunExecutable, [
         '--user', `--unit=${transientUnit}`, '--on-active=1s',
-        this.systemctlExecutable, '--user', 'restart', manifest.unit,
+        this.systemctlExecutable, '--user', 'restart', manifest.systemdUnit,
       ], EXEC_OPTIONS);
       return { accepted: true, scheduled: true };
     }
-    await execFileAsync(this.systemctlExecutable, ['--user', action, manifest.unit], EXEC_OPTIONS);
+    await execFileAsync(this.systemctlExecutable, ['--user', action, manifest.systemdUnit], EXEC_OPTIONS);
     return { accepted: true, scheduled: false };
   }
 
   private async status(manifest: DeploymentManifest): Promise<DeploymentStatus> {
     try {
       const { stdout } = await execFileAsync(this.systemctlExecutable, [
-        '--user', 'show', manifest.unit, '--no-pager',
+        '--user', 'show', manifest.systemdUnit, '--no-pager',
         '--property=LoadState,ActiveState,SubState,UnitFileState',
       ], EXEC_OPTIONS);
       const properties = parseProperties(stdout);
@@ -110,7 +111,7 @@ export class DeploymentManager {
       return manifest;
     }));
     if (new Set(manifests.map(({ id }) => id)).size !== manifests.length) throw new DeploymentError('Deployment IDs must be unique', 500);
-    if (new Set(manifests.map(({ unit }) => unit)).size !== manifests.length) throw new DeploymentError('Deployment units must be unique', 500);
+    if (new Set(manifests.map(({ systemdUnit }) => systemdUnit)).size !== manifests.length) throw new DeploymentError('Deployment units must be unique', 500);
     return manifests;
   }
 }
@@ -127,7 +128,7 @@ function parseManifest(text: string, path: string): DeploymentManifest {
   const value = JSON.parse(text) as Partial<DeploymentManifest>;
   if (value.version !== 1 || typeof value.id !== 'string' || !ID_PATTERN.test(value.id)
     || typeof value.name !== 'string' || !value.name.trim() || !['managed', 'self'].includes(value.kind ?? '')
-    || typeof value.unit !== 'string' || !UNIT_PATTERN.test(value.unit)
+    || typeof value.systemdUnit !== 'string' || !UNIT_PATTERN.test(value.systemdUnit)
     || !Array.isArray(value.actions) || !value.actions.every((action) => ['start', 'stop', 'restart'].includes(action))) {
     throw new DeploymentError(`Invalid deployment manifest: ${path}`, 500);
   }

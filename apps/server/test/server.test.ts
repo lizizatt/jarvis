@@ -125,7 +125,7 @@ fi
 `);
     await chmod(systemctl, 0o700);
     await writeFile(manifest, JSON.stringify({ version: 1, id: 'alesis', name: 'Alesis', kind: 'managed',
-      unit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', actions: ['start', 'stop', 'restart'] }));
+      systemdUnit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', actions: ['start', 'stop', 'restart'] }));
     await writeFile(registry, JSON.stringify({ version: 1, manifests: [manifest] }));
     const app = await trackedApp({ ...configuration(sandbox.dataDir), deploymentRegistryFile: registry, systemctlExecutable: systemctl });
 
