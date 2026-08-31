@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PushSubscription } from 'web-push';
 import { Store } from './database.js';
+import { DeploymentError, DeploymentManager, type DeploymentAction } from './deployments.js';
 import { EventHub } from './events.js';
 import { pullOrigin, pullRequest, previewCandidates, repositoryDiff, repositoryStatus, repositoryStatusFiles, validateGitRoot } from './git.js';
 import { CopilotUsageFetcher } from './copilot.js';
@@ -34,6 +35,8 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   const metrics = new HostMetricsSampler();
   const copilot = new CopilotUsageFetcher();
   const portForwarder = new PortForwarder(config.tailscaleExecutable);
+  const deployments = new DeploymentManager(config.deploymentRegistryFile ?? join(config.dataDir, 'deployments.json'),
+    config.systemctlExecutable, config.systemdRunExecutable);
   await app.register(websocket);
 
   app.addHook('onClose', async () => { await tasks.shutdown(); workers.close(); hub.removeAllListeners(); store.close(); metrics.close(); });
@@ -51,6 +54,19 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   app.delete<{ Params: { port: string } }>('/api/settings/port-forwards/:port', async (request, reply) => {
     try { await portForwarder.close(Number(request.params.port)); return reply.code(204).send(); }
     catch (error) { return sendKnownError(reply, error); }
+  });
+  app.get('/api/deployments', async (_request, reply) => {
+    try { return await deployments.list(); }
+    catch (error) { return sendDeploymentError(reply, error); }
+  });
+  app.post<{ Params: IdParams; Body: { action?: DeploymentAction } }>('/api/deployments/:id/actions', async (request, reply) => {
+    if (!request.body?.action || !['start', 'stop', 'restart'].includes(request.body.action)) {
+      return reply.code(400).send({ error: 'action must be start, stop, or restart' });
+    }
+    try {
+      const result = await deployments.act(request.params.id, request.body.action);
+      return reply.code(result.scheduled ? 202 : 200).send(result);
+    } catch (error) { return sendDeploymentError(reply, error); }
   });
   app.get('/api/config', async () => ({ agentExecutable: config.agentExecutable, policy: config.policy,
     vapidPublicKey: push.publicKey, terminalPersistence: 'node-pty-detached-host' }));
@@ -251,6 +267,11 @@ async function servePreview(store: Store, config: ServerConfig, id: string, requ
     const body = !landing && file.contentType.startsWith('text/html') ? rewritePreviewHtml(file.body, id) : file.body;
     return reply.type(file.contentType).send(body);
   } catch (error) { return sendKnownError(reply, error); }
+}
+
+function sendDeploymentError(reply: FastifyReply, error: unknown): unknown {
+  if (error instanceof DeploymentError) return reply.code(error.statusCode).send({ error: error.message });
+  return sendKnownError(reply, error);
 }
 
 function sendKnownError(reply: FastifyReply, error: unknown): unknown {

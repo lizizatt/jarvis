@@ -35,6 +35,9 @@ const config: ServerConfig = {
   terminalHostScript: process.env.JARVIS_TERMINAL_HOST_SCRIPT || join(currentDirectory, 'terminal-host.js'),
   terminalHostExternal: process.env.JARVIS_TERMINAL_HOST_EXTERNAL === 'true',
   tailscaleExecutable: process.env.JARVIS_TAILSCALE_EXECUTABLE || 'tailscale',
+  deploymentRegistryFile: process.env.JARVIS_DEPLOYMENT_REGISTRY || join(homedir(), '.config/jarvis/deployments.json'),
+  systemctlExecutable: process.env.JARVIS_SYSTEMCTL_EXECUTABLE || 'systemctl',
+  systemdRunExecutable: process.env.JARVIS_SYSTEMD_RUN_EXECUTABLE || 'systemd-run',
   maxJsonLineBytes: positiveInteger(process.env.JARVIS_MAX_JSON_LINE_BYTES, 1024 * 1024, 'JARVIS_MAX_JSON_LINE_BYTES'),
   maxStderrChunkBytes: positiveInteger(process.env.JARVIS_MAX_STDERR_CHUNK_BYTES, 64 * 1024, 'JARVIS_MAX_STDERR_CHUNK_BYTES'),
 };

@@ -47,6 +47,9 @@ export interface ServerConfig {
   terminalHostScript?: string;
   terminalHostExternal?: boolean;
   tailscaleExecutable?: string;
+  deploymentRegistryFile?: string;
+  systemctlExecutable?: string;
+  systemdRunExecutable?: string;
   maxJsonLineBytes: number;
   maxStderrChunkBytes: number;
 }

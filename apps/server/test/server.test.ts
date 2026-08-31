@@ -110,6 +110,34 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
     expect(listed.json()).toEqual([{ port: 8080, url: 'https://jarvis.example.ts.net:8080/' }]);
   });
 
+  it('lists and controls only registered deployments', async () => {
+    const sandbox = await makeSandbox();
+    const systemctl = join(sandbox.root, 'systemctl');
+    const calls = join(sandbox.root, 'systemctl-calls');
+    const manifest = join(sandbox.root, 'deployment.json');
+    const registry = join(sandbox.root, 'deployments.json');
+    await writeFile(systemctl, `#!/bin/sh
+if [ "$2" = show ]; then
+  printf '%s\n' 'LoadState=loaded' 'ActiveState=inactive' 'SubState=dead' 'UnitFileState=enabled'
+else
+  printf '%s\n' "$*" >> "${calls}"
+fi
+`);
+    await chmod(systemctl, 0o700);
+    await writeFile(manifest, JSON.stringify({ version: 1, id: 'alesis', name: 'Alesis', kind: 'managed',
+      unit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', actions: ['start', 'stop', 'restart'] }));
+    await writeFile(registry, JSON.stringify({ version: 1, manifests: [manifest] }));
+    const app = await trackedApp({ ...configuration(sandbox.dataDir), deploymentRegistryFile: registry, systemctlExecutable: systemctl });
+
+    const listed = await app.inject({ method: 'GET', url: '/api/deployments' });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual([{ id: 'alesis', name: 'Alesis', kind: 'managed', state: 'stopped',
+      enabled: true, healthy: null, actions: ['start', 'stop', 'restart'] }]);
+    expect((await app.inject({ method: 'POST', url: '/api/deployments/alesis/actions', payload: { action: 'start' } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/api/deployments/missing/actions', payload: { action: 'restart' } })).statusCode).toBe(404);
+    expect(await readFile(calls, 'utf8')).toBe('--user start jarvis-alesis.service\n');
+  });
+
   it('registers only real checkout roots and reports status and both diffs', async () => {
     const sandbox = await makeSandbox();
     const app = await trackedApp(configuration(sandbox.dataDir));
