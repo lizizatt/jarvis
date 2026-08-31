@@ -27,7 +27,7 @@ test('shows repository state and immediately marks a stopped task as stopping', 
 test('shows Pull for a clean repository and reports success', async () => {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url === '/api/repositories') return Promise.resolve(new Response(JSON.stringify([{ id: 'repo-1', name: 'Flight controls', path: '/src/flight' }])));
+    if (url === '/api/repositories') return Promise.resolve(new Response(JSON.stringify([{ id: 'repo-1', name: 'Flight controls', path: '/src/flight', copilotActive: true }])));
     if (url === '/api/repositories/repo-1/status') return Promise.resolve(new Response(JSON.stringify({ branch: 'main', dirty: false, clean: true, ahead: 0, behind: 0 })));
     if (url === '/api/repositories/repo-1/pull' && init?.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ ok: true, branch: 'main', message: 'Already up to date.' })));
     return Promise.resolve(new Response('{}'));
@@ -38,6 +38,23 @@ test('shows Pull for a clean repository and reports success', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Pull' }));
   expect(await screen.findByRole('status')).toHaveTextContent('Pulled main from origin');
   expect(fetchMock).toHaveBeenCalledWith('/api/repositories/repo-1/pull', expect.objectContaining({ method: 'POST' }));
+});
+
+test('shows Start Copilot instead of Pull when the repository worker is inactive', async () => {
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/repositories') return Promise.resolve(new Response(JSON.stringify([{ id: 'repo-1', name: 'Flight controls', path: '/src/flight', copilotActive: false }])));
+    if (url === '/api/repositories/repo-1/status') return Promise.resolve(new Response(JSON.stringify({ branch: 'main', dirty: false, clean: true, ahead: 0, behind: 0 })));
+    if (url === '/api/repositories/repo-1/copilot' && init?.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ started: true, active: false }), { status: 202 }));
+    return Promise.resolve(new Response('{}'));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  expect(await screen.findByRole('button', { name: 'Start Copilot' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Pull' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Start Copilot' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Opening Copilot in VS Code');
+  expect(fetchMock).toHaveBeenCalledWith('/api/repositories/repo-1/copilot', expect.objectContaining({ method: 'POST' }));
 });
 
 test('keeps repository registration on the server', async () => {

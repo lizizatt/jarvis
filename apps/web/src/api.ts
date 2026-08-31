@@ -79,6 +79,7 @@ export const api = {
     return { branch: value.branch ?? 'detached', dirty: value.dirty ?? false, clean: value.clean ?? !value.dirty, ahead: value.ahead ?? 0, behind: value.behind ?? 0 } as RepositoryStatus;
   },
   pull: (id: string) => request<{ ok: true; branch: string; message: string }>(`/api/repositories/${id}/pull`, { method: 'POST' }),
+  startCopilot: (id: string) => request<{ started: boolean; active: boolean }>(`/api/repositories/${id}/copilot`, { method: 'POST' }),
   tasks: async (repositoryId: string) => collection(await request<WireTask[] | { tasks: WireTask[] }>(`/api/repositories/${repositoryId}/tasks`)).map(task),
   models: (repositoryId: string) => request<ModelMetadata[]>(`/api/repositories/${repositoryId}/models`),
   task: async (id: string) => task(unwrap(await request<WireTask | { task: WireTask }>(`/api/tasks/${id}`), 'task')),

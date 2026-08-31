@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import websocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -65,6 +66,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     return store.listRepositories().map((repository) => {
       const activeTask = activeTasksByRepository.get(repository.id);
       return { ...repository, previewUrl: `/previews/${repository.id}`,
+        copilotActive: workers.hasWorker(repository.path),
         activeTask: activeTask ? taskSummary(store, activeTask, eventsByTaskId.get(activeTask.id)) : null };
     });
   });
@@ -105,6 +107,15 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
     }
     try { return await pullOrigin(repository.path); }
     catch (error) { return sendKnownError(reply, error); }
+  });
+  app.post<{ Params: IdParams }>('/api/repositories/:id/copilot', async (request, reply) => {
+    const repository = store.getRepository(request.params.id);
+    if (!repository) return reply.code(404).send({ error: 'Repository not found' });
+    if (workers.hasWorker(repository.path)) return { started: false, active: true };
+    try {
+      await launchEditor(config.editorExecutable, repository.path);
+      return reply.code(202).send({ started: true, active: false });
+    } catch (error) { return sendKnownError(reply, error); }
   });
   app.get<{ Params: IdParams; Querystring: { staged?: string } }>('/api/repositories/:id/diff', async (request, reply) =>
     withRepository(store, request.params.id, reply, (path) => repositoryDiff(path, request.query.staged === 'true')));
@@ -214,6 +225,14 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
       ? reply.code(404).send({ error: 'Not found' }) : reply.sendFile('index.html'));
   }
   return app;
+}
+
+function launchEditor(executable: string, repositoryPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, ['--new-window', repositoryPath], { detached: true, stdio: 'ignore' });
+    child.once('error', reject);
+    child.once('spawn', () => { child.unref(); resolve(); });
+  });
 }
 
 async function withRepository(store: Store, id: string, reply: FastifyReply, operation: (path: string) => Promise<unknown>): Promise<unknown> {

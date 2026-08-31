@@ -36,6 +36,7 @@ export interface Repository {
   path: string;
   defaultBranch?: string;
   previewUrl?: string;
+  copilotActive?: boolean;
   status?: RepositoryStatus;
   activeTask?: TaskSummary;
 }

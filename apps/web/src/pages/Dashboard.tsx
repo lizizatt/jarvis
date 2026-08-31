@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Download, GitBranch, Sparkles, Square } from 'lucide-react';
+import { ArrowDown, ArrowUp, Download, GitBranch, MonitorUp, Sparkles, Square } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { elapsed, useLoad } from '../hooks';
@@ -19,6 +19,7 @@ export function Dashboard() {
   const { data: repositories = [], setData, error, loading, reload } = useLoad(api.repositories, [], repositoriesEqual);
   const [spaceView, setSpaceView] = useState(false);
   const [pullingRepositoryId, setPullingRepositoryId] = useState<string>();
+  const [startingCopilotRepositoryId, setStartingCopilotRepositoryId] = useState<string>();
   const [pullFeedback, setPullFeedback] = useState<{ repositoryId: string; message: string; error: boolean }>();
 
   useEffect(() => {
@@ -38,6 +39,18 @@ export function Dashboard() {
     } finally { setPullingRepositoryId(undefined); }
   }
 
+  async function startCopilot(repositoryId: string) {
+    setStartingCopilotRepositoryId(repositoryId);
+    setPullFeedback(undefined);
+    try {
+      await api.startCopilot(repositoryId);
+      setPullFeedback({ repositoryId, message: 'Opening Copilot in VS Code', error: false });
+      await reload(false);
+    } catch (reason) {
+      setPullFeedback({ repositoryId, message: reason instanceof Error ? reason.message : 'Copilot startup failed', error: true });
+    } finally { setStartingCopilotRepositoryId(undefined); }
+  }
+
   return <main className="page dashboard" data-testid="dashboard">
     <AmbientSigil />
     <header className="page-heading"><h1 className="sr-only">Repositories</h1><SystemWidget /><div className="heading-actions"><PwaControls /><button className="icon-button" aria-label="Space view" aria-pressed={spaceView} onClick={() => setSpaceView((current) => !current)}><Sparkles /></button></div></header>
@@ -52,7 +65,8 @@ export function Dashboard() {
           <div className="git-facts"><span><GitBranch size={15} />{repo.status?.branch ?? repo.defaultBranch ?? 'unknown'}</span><span><ArrowUp size={14} />{repo.status?.ahead ?? 0}</span><span><ArrowDown size={14} />{repo.status?.behind ?? 0}</span></div>
           {repo.activeTask && <div className="activity"><TaskStatusBadge status={repo.activeTask.status} /><strong>{repo.activeTask.latestAction ?? repo.activeTask.title ?? 'Agent is working'}</strong><time>{elapsed(repo.activeTask.startedAt ?? repo.activeTask.createdAt)}</time></div>}
         </Link>
-        {repo.status?.clean && !repo.activeTask && <button className="button secondary compact pull" disabled={pullingRepositoryId === repo.id} onClick={() => void pull(repo.id)}><Download size={14} />{pullingRepositoryId === repo.id ? 'Pulling…' : 'Pull'}</button>}
+        {!repo.activeTask && !repo.copilotActive && <button className="button secondary compact copilot" disabled={startingCopilotRepositoryId === repo.id} onClick={() => void startCopilot(repo.id)}><MonitorUp size={14} />{startingCopilotRepositoryId === repo.id ? 'Starting…' : 'Start Copilot'}</button>}
+        {repo.copilotActive && repo.status?.clean && !repo.activeTask && <button className="button secondary compact pull" disabled={pullingRepositoryId === repo.id} onClick={() => void pull(repo.id)}><Download size={14} />{pullingRepositoryId === repo.id ? 'Pulling…' : 'Pull'}</button>}
         {repo.activeTask && ['queued', 'starting', 'running', 'stopping'].includes(repo.activeTask.status) && <button className="button stop compact" aria-label={`Stop task in ${repo.name}`} disabled={repo.activeTask.status === 'stopping'} onClick={() => { if (confirm(`Stop the active task in ${repo.name}?`)) { setData(repositories.map((item) => item.id === repo.id && item.activeTask ? { ...item, activeTask: { ...item.activeTask, status: 'stopping' } } : item)); void api.stop(repo.activeTask!.id).catch(() => reload()); } }}><Square size={14} />{repo.activeTask.status === 'stopping' ? 'Stopping' : 'Stop'}</button>}
         {pullFeedback?.repositoryId === repo.id && <span className={`pull-feedback${pullFeedback.error ? ' error' : ''}`} role="status">{pullFeedback.message}</span>}
       </article>)}

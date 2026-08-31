@@ -12,6 +12,7 @@ The systemd services load `~/.config/jarvis/.env`. For foreground development, e
 | `JARVIS_DATA_DIR` | `~/.jarvis` | SQLite database, previews, and terminal socket. |
 | `JARVIS_AGENT_BACKEND` | `worker` | `worker` requires a matching connected VS Code window; `cli` runs the configured executable; `auto` prefers a worker and falls back to CLI. |
 | `JARVIS_AGENT_EXECUTABLE` | `copilot` | Executable used only by `cli` or `auto` fallback. |
+| `JARVIS_EDITOR_EXECUTABLE` | `code` | VS Code executable used to open a repository's Copilot worker from the mobile UI. |
 | `JARVIS_POLICY` | built-in commit/push approval policy | Additional plain text sent to every agent task. Jarvis does not enforce it. |
 | `JARVIS_AGENT_INSTRUCTIONS_FILE` | checkout `AGENTS.md` | Framework instructions supplied to Jarvis-invoked agents. Use an absolute path to override. |
 | `JARVIS_WEB_ROOT` | `apps/web/dist` | Built PWA assets served by the server. |

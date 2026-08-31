@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -126,6 +127,27 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
     expect((await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/diff` })).body).toContain('unstaged');
     const pr = (await app.inject({ method: 'GET', url: `/api/repositories/${repository.id}/pull-request` })).json();
     expect(typeof pr.available).toBe('boolean');
+  });
+
+  it('reports Copilot presence and opens an inactive repository in VS Code', async () => {
+    const sandbox = await makeSandbox();
+    const executable = join(sandbox.root, 'code');
+    const calls = join(sandbox.root, 'code-calls');
+    await writeFile(executable, `#!/bin/sh
+printf '%s\n' "$@" > "${calls}"
+`);
+    await chmod(executable, 0o700);
+    const app = await trackedApp({ ...configuration(sandbox.dataDir), editorExecutable: executable });
+    const repository = await register(app, sandbox.repository);
+
+    expect((await app.inject({ method: 'GET', url: '/api/repositories' })).json()[0]).toMatchObject({
+      id: repository.id,
+      copilotActive: false,
+    });
+    const opened = await app.inject({ method: 'POST', url: `/api/repositories/${repository.id}/copilot` });
+    expect(opened.statusCode).toBe(202);
+    await waitFor(async () => existsSync(calls));
+    expect(await readFile(calls, 'utf8')).toBe(`--new-window\n${sandbox.repository}\n`);
   });
 
   it('does not mark a repository dirty for untracked-only files, but still lists them', async () => {
@@ -442,6 +464,7 @@ if [ "$1" = serve ] && [ "$2" = status ]; then printf '%s' '{"Web":{"jarvis.exam
       models: expect.arrayContaining([expect.objectContaining({ id: 'auto', vendor: 'copilot' })]),
       activeTaskIds: [], activity: 'idle', presence: { focused: true, active: true },
     }]);
+    expect((await app.inject({ method: 'GET', url: '/api/repositories' })).json()[0].copilotActive).toBe(true);
     worker.socket.send(JSON.stringify({ version: 2, type: 'hello', workerId: 'test-worker', windowName: 'test-window',
       workspaceRoots: [workerRoot], models: [],
       presence: { focused: false, active: true, updatedAt: new Date().toISOString() } }));
@@ -781,7 +804,7 @@ async function makeSandbox(): Promise<{ root: string; dataDir: string; repositor
 }
 
 function configuration(dataDir: string): ServerConfig {
-  return { dataDir, host: '127.0.0.1', port: 0, agentExecutable: fixtureAgent, agentBackend: 'auto', policy: 'TEST POLICY',
+  return { dataDir, host: '127.0.0.1', port: 0, agentExecutable: fixtureAgent, editorExecutable: 'code', agentBackend: 'auto', policy: 'TEST POLICY',
     terminalHostScript: terminalHost, maxJsonLineBytes: 1024 * 1024, maxStderrChunkBytes: 64 * 1024 };
 }
 

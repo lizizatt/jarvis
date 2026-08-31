@@ -28,6 +28,7 @@ const config: ServerConfig = {
   host,
   port: Number(process.env.JARVIS_PORT || 3210),
   agentExecutable: process.env.JARVIS_AGENT_EXECUTABLE || 'copilot',
+  editorExecutable: process.env.JARVIS_EDITOR_EXECUTABLE || 'code',
   agentBackend: agentBackend as ServerConfig['agentBackend'],
   policy: [frameworkInstructions, configuredPolicy].filter(Boolean).join('\n\n'),
   webRoot: process.env.JARVIS_WEB_ROOT || join(repositoryRoot, 'apps/web/dist'),

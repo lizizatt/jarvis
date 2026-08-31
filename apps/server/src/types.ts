@@ -40,6 +40,7 @@ export interface ServerConfig {
   host: string;
   port: number;
   agentExecutable: string;
+  editorExecutable: string;
   agentBackend: 'auto' | 'worker' | 'cli';
   policy: string;
   webRoot?: string;
