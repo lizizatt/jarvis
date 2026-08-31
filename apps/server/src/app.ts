@@ -36,7 +36,7 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   const copilot = new CopilotUsageFetcher();
   const portForwarder = new PortForwarder(config.tailscaleExecutable);
   const deployments = new DeploymentManager(config.deploymentRegistryFile ?? join(config.dataDir, 'deployments.json'),
-    config.systemctlExecutable, config.systemdRunExecutable);
+    config.systemctlExecutable, config.systemdRunExecutable, config.tailscaleExecutable);
   await app.register(websocket);
 
   app.addHook('onClose', async () => { await tasks.shutdown(); workers.close(); hub.removeAllListeners(); store.close(); metrics.close(); });

@@ -21,6 +21,7 @@ export interface DeploymentManifest {
   build?: string[];
   healthUrl?: string;
   actions: DeploymentAction[];
+  homeUrl?: string;
   warning?: string;
 }
 
@@ -47,11 +48,13 @@ export class DeploymentManager {
     private readonly registryFile: string,
     private readonly systemctlExecutable = 'systemctl',
     private readonly systemdRunExecutable = 'systemd-run',
+    private readonly tailscaleExecutable = 'tailscale',
   ) {}
 
   async list(): Promise<DeploymentStatus[]> {
     const manifests = await this.loadManifests();
-    return Promise.all(manifests.map((manifest) => this.status(manifest)));
+    const homeUrls = await this.homeUrls();
+    return Promise.all(manifests.map((manifest) => this.status(manifest, homeUrls)));
   }
 
   async act(id: string, action: DeploymentAction): Promise<{ accepted: true; scheduled: boolean }> {
@@ -71,7 +74,8 @@ export class DeploymentManager {
     return { accepted: true, scheduled: false };
   }
 
-  private async status(manifest: DeploymentManifest): Promise<DeploymentStatus> {
+  private async status(manifest: DeploymentManifest, homeUrls: Map<number, string>): Promise<DeploymentStatus> {
+    const homeUrl = manifest.healthUrl ? homeUrls.get(Number(new URL(manifest.healthUrl).port)) : undefined;
     try {
       const { stdout } = await execFileAsync(this.systemctlExecutable, [
         '--user', 'show', manifest.systemdUnit, '--no-pager',
@@ -82,12 +86,21 @@ export class DeploymentManager {
       const healthy = state === 'running' && manifest.healthUrl ? await probe(manifest.healthUrl) : null;
       return { id: manifest.id, name: manifest.name, kind: manifest.kind, state,
         enabled: properties.UnitFileState === 'enabled', healthy, actions: [...manifest.actions],
+        ...(homeUrl ? { homeUrl } : {}),
         ...(manifest.warning ? { warning: manifest.warning } : {}) };
     } catch (error) {
       return { id: manifest.id, name: manifest.name, kind: manifest.kind, state: 'unavailable',
         enabled: false, healthy: null, actions: [...manifest.actions],
+        ...(homeUrl ? { homeUrl } : {}),
         ...(manifest.warning ? { warning: manifest.warning } : {}), detail: errorMessage(error) };
     }
+  }
+
+  private async homeUrls(): Promise<Map<number, string>> {
+    try {
+      const { stdout } = await execFileAsync(this.tailscaleExecutable, ['serve', 'status', '--json'], EXEC_OPTIONS);
+      return parseServeHomeUrls(stdout);
+    } catch { return new Map(); }
   }
 
   private async loadManifests(): Promise<DeploymentManifest[]> {
@@ -152,6 +165,19 @@ function parseProperties(output: string): Record<string, string> {
     const separator = line.indexOf('=');
     return separator < 0 ? [line, ''] : [line.slice(0, separator), line.slice(separator + 1)];
   }));
+}
+
+function parseServeHomeUrls(output: string): Map<number, string> {
+  const status = JSON.parse(output) as { Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> };
+  const urls = new Map<number, string>();
+  for (const [hostPort, entry] of Object.entries(status.Web ?? {})) {
+    const proxy = entry.Handlers?.['/']?.Proxy;
+    if (!proxy) continue;
+    const target = new URL(proxy);
+    if (target.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) || !target.port) continue;
+    urls.set(Number(target.port), new URL(`https://${hostPort}/`).toString());
+  }
+  return urls;
 }
 
 function deploymentState(loadState: string, activeState: string): DeploymentState {

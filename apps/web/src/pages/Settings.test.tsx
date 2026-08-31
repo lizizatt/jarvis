@@ -71,7 +71,7 @@ test('starts and restarts managed deployments while protecting Jarvis', async ()
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === '/api/deployments' && (!init || init.method === undefined)) {
       return Promise.resolve(new Response(JSON.stringify([
-        { id: 'alesis', name: 'Alesis', kind: 'managed', state: 'stopped', enabled: true, healthy: null, actions: ['start', 'stop', 'restart'] },
+        { id: 'alesis', name: 'Alesis', kind: 'managed', state: 'stopped', enabled: true, healthy: null, homeUrl: 'https://jarvis.example.ts.net:8787/', actions: ['start', 'stop', 'restart'] },
         { id: 'jarvis', name: 'Jarvis', kind: 'self', state: 'running', enabled: true, healthy: true, actions: ['restart'], warning: 'This might get weird.' },
       ])));
     }
@@ -85,6 +85,7 @@ test('starts and restarts managed deployments while protecting Jarvis', async ()
   render(<App />);
 
   await userEvent.click(await screen.findByRole('switch', { name: 'Start Alesis' }));
+  expect(screen.getByRole('link', { name: 'Open Alesis' })).toHaveAttribute('href', 'https://jarvis.example.ts.net:8787/');
   expect(fetchMock).toHaveBeenCalledWith('/api/deployments/alesis/actions', expect.objectContaining({
     method: 'POST', body: JSON.stringify({ action: 'start' }),
   }));

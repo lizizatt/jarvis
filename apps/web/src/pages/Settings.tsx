@@ -72,6 +72,7 @@ export function Settings() {
                 {deployment.detail && <p>{deployment.detail}</p>}
               </div>
               <div className="deployment-actions">
+                {deployment.homeUrl && <a className="icon-button" href={deployment.homeUrl} target="_blank" rel="noreferrer" aria-label={`Open ${deployment.name}`} title={`Open ${deployment.name}`}><ExternalLink /></a>}
                 {deployment.actions.includes('start') && deployment.actions.includes('stop') && <button type="button" role="switch" aria-checked={active} aria-label={`${active ? 'Stop' : 'Start'} ${deployment.name}`} className="deployment-switch" disabled={pending || deployment.state === 'unavailable'} onClick={() => void control(deployment, toggleAction)}><span /><Power size={15} /></button>}
                 {deployment.actions.includes('restart') && <button type="button" className="icon-button" aria-label={`Restart ${deployment.name}`} title={`Restart ${deployment.name}`} disabled={pending || deployment.state === 'unavailable'} onClick={() => void control(deployment, 'restart')}><RefreshCw className={pending && deploymentAction.action === 'restart' ? 'spin' : ''} /></button>}
               </div>

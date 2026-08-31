@@ -13,11 +13,11 @@ afterEach(async () => {
 describe('DeploymentManager', () => {
   it('lists live systemd state and invokes only a declared unit', async () => {
     const fixture = await makeFixture();
-    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun);
+    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun, fixture.tailscale);
 
     await expect(manager.list()).resolves.toEqual([
       { id: 'alesis', name: 'Alesis', kind: 'managed', state: 'running', enabled: true,
-        healthy: null, actions: ['start', 'stop', 'restart'] },
+        healthy: false, actions: ['start', 'stop', 'restart'], homeUrl: 'https://jarvis.example.ts.net:8787/' },
       { id: 'jarvis', name: 'Jarvis', kind: 'self', state: 'running', enabled: true,
         healthy: null, actions: ['restart'], warning: 'May interrupt active work.' },
     ]);
@@ -28,7 +28,7 @@ describe('DeploymentManager', () => {
 
   it('rejects unknown deployments and forbidden actions without invoking systemd', async () => {
     const fixture = await makeFixture();
-    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun);
+    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun, fixture.tailscale);
 
     await expect(manager.act('missing', 'restart')).rejects.toMatchObject({ statusCode: 404 });
     await expect(manager.act('jarvis', 'stop')).rejects.toMatchObject({ statusCode: 409 });
@@ -37,7 +37,7 @@ describe('DeploymentManager', () => {
 
   it('schedules Jarvis restart outside the server process', async () => {
     const fixture = await makeFixture();
-    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun);
+    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun, fixture.tailscale);
 
     await expect(manager.act('jarvis', 'restart')).resolves.toEqual({ accepted: true, scheduled: true });
     const calls = await readFile(fixture.calls, 'utf8');
@@ -55,12 +55,13 @@ describe('DeploymentManager', () => {
   });
 });
 
-async function makeFixture(): Promise<{ root: string; registry: string; systemctl: string; systemdRun: string; calls: string }> {
+async function makeFixture(): Promise<{ root: string; registry: string; systemctl: string; systemdRun: string; tailscale: string; calls: string }> {
   const root = await mkdtemp(join(tmpdir(), 'jarvis-deployments-'));
   roots.push(root);
   const calls = join(root, 'calls.log');
   const systemctl = join(root, 'systemctl');
   const systemdRun = join(root, 'systemd-run');
+  const tailscale = join(root, 'tailscale');
   const alesis = join(root, 'alesis.json');
   const jarvis = join(root, 'jarvis.json');
   const registry = join(root, 'registry.json');
@@ -74,12 +75,16 @@ fi
   await writeFile(systemdRun, `#!/bin/sh
 printf 'systemd-run %s\n' "$*" >> '${calls}'
 `);
+  await writeFile(tailscale, `#!/bin/sh
+printf '%s' '{"Web":{"jarvis.example.ts.net:8787":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:29999"}}}}}'
+`);
   await chmod(systemctl, 0o700);
   await chmod(systemdRun, 0o700);
+  await chmod(tailscale, 0o700);
   await writeFile(alesis, JSON.stringify({ version: 1, id: 'alesis', name: 'Alesis', kind: 'managed',
-    systemdUnit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', actions: ['start', 'stop', 'restart'] }));
+    systemdUnit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', healthUrl: 'http://127.0.0.1:29999/health', actions: ['start', 'stop', 'restart'] }));
   await writeFile(jarvis, JSON.stringify({ version: 1, id: 'jarvis', name: 'Jarvis', kind: 'self',
     systemdUnit: 'jarvis.service', actions: ['restart'], warning: 'May interrupt active work.' }));
   await writeFile(registry, JSON.stringify({ version: 1, manifests: [alesis, jarvis] }));
-  return { root, registry, systemctl, systemdRun, calls };
+  return { root, registry, systemctl, systemdRun, tailscale, calls };
 }

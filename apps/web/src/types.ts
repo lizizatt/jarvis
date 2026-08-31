@@ -93,6 +93,7 @@ export interface Deployment {
   enabled: boolean;
   healthy: boolean | null;
   actions: DeploymentAction[];
+  homeUrl?: string;
   warning?: string;
   detail?: string;
 }
