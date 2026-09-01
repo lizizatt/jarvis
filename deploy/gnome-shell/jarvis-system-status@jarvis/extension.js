@@ -12,7 +12,10 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 const POLL_INTERVAL_SECONDS = 2;
 const CREDIT_POLL_INTERVAL_SECONDS = 60;
 const DASHBOARD_URL = 'http://127.0.0.1:3210/';
-const SESSION_FLAGS = ['🏳️‍🌈', '🏳️‍⚧️'];
+const REPOSITORY_HEARTS = [
+  '❤️', '🧡', '💛', '💚', '💙', '💜', '🤎', '🖤', '🤍', '🩷', '🩵', '🩶',
+  '💖', '💗', '💓', '💞', '💕', '💘', '💝', '💟', '❤️‍🔥', '❤️‍🩹',
+];
 const WINDOW_BRIDGE_BUS = 'org.gnome.Shell.Extensions.JarvisSystemStatus';
 const WINDOW_BRIDGE_PATH = '/org/gnome/Shell/Extensions/JarvisSystemStatus';
 const WINDOW_BRIDGE_XML = `
@@ -42,12 +45,14 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._session = new Soup.Session();
     this._indicator = new JarvisIndicator();
     this._box = new St.BoxLayout({ style_class: 'panel-status-menu-box' });
+    this._dashboard = this._clickableLabel('🏳️‍⚧️', () => this._openUrl(DASHBOARD_URL));
+    this._dashboard.tooltip_text = 'Open Jarvis';
     this._cpu = this._clickableLabel('CPU --%', () => this._launchHtop());
     this._memory = this._clickableLabel('RAM --%', () => this._launchHtop());
     this._creditText = 'CR --';
     this._credits = this._clickableLabel(this._creditText, () => this._openUrl(DASHBOARD_URL));
     this._workersBox = new St.BoxLayout();
-    this._workerActors = new Map();
+    this._repositoryActors = new Map();
     this._workerWindows = new Map();
     this._workersRefreshInFlight = false;
     const bridge = Gio.DBusExportedObject.wrapJSObject(WINDOW_BRIDGE_XML, this);
@@ -60,6 +65,7 @@ export default class JarvisSystemStatusExtension extends Extension {
       null,
       () => { if (this._bridge === bridge) bridge.unexport(); },
     );
+    this._box.add_child(this._dashboard);
     this._box.add_child(this._cpu);
     this._box.add_child(new St.Label({ text: '  ', y_align: Clutter.ActorAlign.CENTER }));
     this._box.add_child(this._memory);
@@ -97,14 +103,14 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._indicator?.destroy();
     this._indicator = null;
     this._box = null;
+    this._dashboard = null;
     this._cpu = null;
     this._memory = null;
     this._credits = null;
     this._workersBox = null;
-    this._workerActors = null;
+    this._repositoryActors = null;
     this._workerWindows = null;
     this._workersRefreshInFlight = false;
-    this._sessionFlags = null;
     const bridge = this._bridge;
     this._bridge = null;
     if (this._bridgeBusOwner) Gio.bus_unown_name(this._bridgeBusOwner);
@@ -145,10 +151,11 @@ export default class JarvisSystemStatusExtension extends Extension {
     }
   }
 
-  async _fetch(path) {
+  async _fetch(path, method = 'GET') {
     const session = this._session;
     if (!session) return null;
     const message = Soup.Message.new('GET', `${DASHBOARD_URL}api/${path}`);
+    message.set_method(method);
     const cancellable = Gio.Cancellable.new();
     let timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
       cancellable.cancel();
@@ -194,38 +201,51 @@ export default class JarvisSystemStatusExtension extends Extension {
     if (this._workersRefreshInFlight) return;
     this._workersRefreshInFlight = true;
     try {
-      const workers = await this._fetch('workers');
-      if (!workers || !this._workersBox) return;
+      const [repositories, workers] = await Promise.all([
+        this._fetch('repositories'),
+        this._fetch('workers'),
+      ]);
+      if (!repositories || !workers || !this._workersBox) return;
       const currentWorkerIds = new Set(workers.map((worker) => worker.workerId));
       for (const workerId of this._workerWindows.keys()) {
         if (!currentWorkerIds.has(workerId)) this._workerWindows.delete(workerId);
       }
-      for (const [workerId, actor] of this._workerActors) {
-        if (!currentWorkerIds.has(workerId)) {
+      const currentRepositoryIds = new Set(repositories.map((repository) => repository.id));
+      for (const [repositoryId, actor] of this._repositoryActors) {
+        if (!currentRepositoryIds.has(repositoryId)) {
           actor.destroy();
-          this._workerActors.delete(workerId);
-          this._sessionFlags?.delete(workerId);
+          this._repositoryActors.delete(repositoryId);
         }
       }
-      workers.forEach((worker, index) => {
-        const activity = worker.activity ?? (worker.activeTaskIds?.length ? 'thinking' : 'idle');
-        const text = activity === 'needs-input' ? '🛑' : activity === 'thinking' ? '🤔' : this._flagFor(worker.workerId);
-        let actor = this._workerActors.get(worker.workerId);
+      repositories.forEach((repository, index) => {
+        const worker = workers.find((candidate) => candidate.workspaceRoots?.includes(repository.path));
+        const activity = worker?.activity ?? (worker?.activeTaskIds?.length ? 'thinking' : 'idle');
+        const text = REPOSITORY_HEARTS[index % REPOSITORY_HEARTS.length];
+        let actor = this._repositoryActors.get(repository.id);
         if (!actor) {
-          actor = this._clickableLabel(text, () => this._focusWorker(actor.jarvisWorker));
+          actor = this._clickableLabel(text, () => this._activateRepository(actor.jarvisRepository, actor.jarvisWorker));
           actor.add_style_class_name('jarvis-worker-status');
-          this._workerActors.set(worker.workerId, actor);
+          this._repositoryActors.set(repository.id, actor);
           this._workersBox.add_child(actor);
         }
         actor.text = text;
-        actor.tooltip_text = `${worker.windowName}\nWindow: ${this._presenceText(worker.presence)}\nJarvis: ${this._activityText(activity)}`;
+        actor.tooltip_text = worker
+          ? `${repository.name}\nWindow: ${this._presenceText(worker.presence)}\nJarvis: ${this._activityText(activity)}`
+          : `${repository.name}\nWindow: closed`;
+        actor.jarvisRepository = repository;
         actor.jarvisWorker = worker;
         actor.remove_style_class_name('jarvis-worker-focused');
         actor.remove_style_class_name('jarvis-worker-active');
         actor.remove_style_class_name('jarvis-worker-background');
-        actor.add_style_class_name(worker.presence?.focused
+        actor.remove_style_class_name('jarvis-worker-closed');
+        actor.remove_effect_by_name('jarvis-worker-closed');
+        actor.add_style_class_name(worker?.presence?.focused
           ? 'jarvis-worker-focused'
-          : worker.presence?.active ? 'jarvis-worker-active' : 'jarvis-worker-background');
+          : worker?.presence?.active ? 'jarvis-worker-active' : 'jarvis-worker-background');
+        if (!worker) {
+          actor.add_style_class_name('jarvis-worker-closed');
+          actor.add_effect_with_name('jarvis-worker-closed', new Clutter.DesaturateEffect({ factor: 1.0 }));
+        }
         this._workersBox.set_child_at_index(actor, index);
       });
     } finally {
@@ -239,6 +259,15 @@ export default class JarvisSystemStatusExtension extends Extension {
 
   _activityText(activity) {
     return activity === 'needs-input' ? 'needs input' : activity === 'thinking' ? 'thinking' : 'idle';
+  }
+
+  async _activateRepository(repository, worker) {
+    if (worker) {
+      this._focusWorker(worker);
+      return;
+    }
+    const result = await this._fetch(`repositories/${encodeURIComponent(repository.id)}/copilot`, 'POST');
+    if (!result) console.warn(`Jarvis system status: unable to open Copilot for ${repository.name}`);
   }
 
   _focusWorker(worker) {
@@ -272,15 +301,6 @@ export default class JarvisSystemStatusExtension extends Extension {
     console.warn(`Jarvis system status: no unambiguous window found for ${worker.windowName}`);
   }
 
-  _flagFor(workerId) {
-    if (!this._sessionFlags) this._sessionFlags = new Map();
-    if (!this._sessionFlags.has(workerId)) {
-      const assigned = new Set(this._sessionFlags.values());
-      const available = SESSION_FLAGS.find((flag) => !assigned.has(flag));
-      this._sessionFlags.set(workerId, available ?? SESSION_FLAGS[this._sessionFlags.size % SESSION_FLAGS.length]);
-    }
-    return this._sessionFlags.get(workerId);
-  }
 }
 
 function windowTitleMatches(title, names) {

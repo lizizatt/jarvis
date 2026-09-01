@@ -33,3 +33,7 @@
 .jarvis-worker-background {
   opacity: 0.6;
 }
+
+.jarvis-worker-closed {
+  opacity: 0.35;
+}

@@ -27,7 +27,7 @@ import {
 } from '../virtualWindowMotion';
 import { createVirtualWindowRenderer } from '../virtualWindowRenderer';
 
-const STARMAP_URL = '/media/starmap_2020_4k.png';
+const STARMAP_URL = '/media/starmap_2020_4k.webp';
 const MAX_EARTH_ORBIT_ACCELERATION = 120;
 // Time-constant for the output exponential lerp (pan/roll positions).
 // Raising this from the previous 20 ms to 80 ms is the primary jitter fix:
@@ -49,9 +49,16 @@ function readHorizonDebugFlag() {
 
 function readEarthOrbitAcceleration() {
   if (typeof window === 'undefined') return DEFAULT_EARTH_ORBIT_ACCELERATION;
-  const value = Number(new URLSearchParams(window.location.search).get('earthOrbitAcceleration'));
+  const parameter = new URLSearchParams(window.location.search).get('earthOrbitAcceleration');
+  if (parameter === null) return DEFAULT_EARTH_ORBIT_ACCELERATION;
+  const value = Number(parameter);
   if (!Number.isFinite(value)) return DEFAULT_EARTH_ORBIT_ACCELERATION;
   return clamp(value, 0, MAX_EARTH_ORBIT_ACCELERATION);
+}
+
+function isDigitalWindowHarness() {
+  return typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('digitalWindowHarness');
 }
 
 export function AmbientSigil() {
@@ -62,7 +69,9 @@ export function AmbientSigil() {
     const hostEl = backgroundRef.current;
     const canvas = canvasRef.current;
     if (!hostEl || !canvas || typeof window === 'undefined') return;
-    const renderer = createVirtualWindowRenderer(canvas, STARMAP_URL);
+    const renderer = createVirtualWindowRenderer(canvas, STARMAP_URL, {
+      preserveDrawingBuffer: isDigitalWindowHarness()
+    });
     const horizonDebug = readHorizonDebugFlag();
     const earthOrbitAcceleration = readEarthOrbitAcceleration();
 

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ArrowDown, ArrowUp, Download, GitBranch, MonitorUp, Sparkles, Square } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { elapsed, useLoad } from '../hooks';
+import { elapsed, useLoad, useVisiblePolling } from '../hooks';
 import { TaskStatusBadge } from '../components/Status';
 import { PwaControls } from '../components/PwaControls';
 import { SystemWidget } from '../components/SystemWidget';
@@ -22,10 +22,7 @@ export function Dashboard() {
   const [startingCopilotRepositoryId, setStartingCopilotRepositoryId] = useState<string>();
   const [pullFeedback, setPullFeedback] = useState<{ repositoryId: string; message: string; error: boolean }>();
 
-  useEffect(() => {
-    const refresh = window.setInterval(() => void reload(false), 2_000);
-    return () => { window.clearInterval(refresh); };
-  }, [reload]);
+  useVisiblePolling(() => void reload(false), 2_000);
 
   async function pull(repositoryId: string) {
     setPullingRepositoryId(repositoryId);

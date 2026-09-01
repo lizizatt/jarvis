@@ -84,7 +84,7 @@ test('space view toggle hides the repository list without navigating away', asyn
   expect(await screen.findByText('Flight controls')).toBeVisible();
 });
 
-test('keeps repositories visible while polling in the background', async () => {
+test('keeps repositories visible and pauses polling while the tab is hidden', async () => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   let resolveRefresh!: (response: Response) => void;
   let repositoryRequests = 0;
@@ -105,4 +105,12 @@ test('keeps repositories visible while polling in the background', async () => {
   expect(screen.queryByText('Loading repositories…')).not.toBeInTheDocument();
   resolveRefresh(new Response(JSON.stringify([{ id: 'repo-1', name: 'Flight controls', path: '/src/flight' }])));
   await act(async () => {});
+
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+  await act(async () => { vi.advanceTimersByTime(2_000); await Promise.resolve(); });
+  expect(repositoryRequests).toBe(2);
+
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')); await Promise.resolve(); });
+  expect(repositoryRequests).toBe(3);
 });

@@ -7,6 +7,10 @@ export type VirtualWindowRenderer = {
   dispose(): void;
 };
 
+export type VirtualWindowRendererOptions = {
+  preserveDrawingBuffer?: boolean;
+};
+
 type WebGL = WebGLRenderingContext;
 
 const VERTEX_SHADER = `
@@ -250,9 +254,16 @@ vec3 orbitingEarthColor(vec3 ray, float time) {
   return surfaceColor;
 }
 
+bool sigilMayOverlapLatitude(float rayLatitude, vec2 center, float radius) {
+  float centerLatitude = (center.y - 0.5) * 3.14159265359;
+  float conservativeAngularRadius = radius * 1.3 * 3.14159265359;
+  return abs(rayLatitude - centerLatitude) <= conservativeAngularRadius;
+}
+
 float sigilField(vec3 ray, float time, float quality) {
   const float maxSigils = 108.0;
   float total = 0.0;
+  float rayLatitude = asin(clamp(ray.y, -1.0, 1.0));
   for (int index = 0; index < 108; index++) {
     float fi = float(index);
     if (fi >= quality) break;
@@ -265,19 +276,25 @@ float sigilField(vec3 ray, float time, float quality) {
     float phase = hash21(seed + 7.0) * 6.28318530718;
     float variant = floor(hash21(seed + 12.0) * 4.0);
     float layerOffset = hash21(seed + 19.0) * 6.28318530718;
-    float shimmer = triWave(time * 0.05 + hash11(fi + 1.0));
-    total += animatedSigil(ray, center, radius, time, phase + layerOffset, variant) * mix(0.82, 1.2, shimmer);
+    if (sigilMayOverlapLatitude(rayLatitude, center, radius)) {
+      float shimmer = triWave(time * 0.05 + hash11(fi + 1.0));
+      total += animatedSigil(ray, center, radius, time, phase + layerOffset, variant) * mix(0.82, 1.2, shimmer);
+    }
 
     if (quality > 54.0 || mod(fi, 2.0) < 0.5) {
       vec2 echoCenter = vec2(fract(center.x + 0.12 + jitter.y * 0.07), clamp(center.y + (jitter.x - 0.5) * 0.09, 0.03, 0.97));
       float echoRadius = radius * mix(0.52, 0.78, jitter.x);
-      total += animatedSigil(ray, echoCenter, echoRadius, time * 1.14, phase + 2.7, mod(variant + 1.0, 4.0)) * 0.52;
+      if (sigilMayOverlapLatitude(rayLatitude, echoCenter, echoRadius)) {
+        total += animatedSigil(ray, echoCenter, echoRadius, time * 1.14, phase + 2.7, mod(variant + 1.0, 4.0)) * 0.52;
+      }
     }
 
     if (quality > 90.0) {
       vec2 twinCenter = vec2(fract(center.x - 0.16 - jitter.x * 0.08), clamp(center.y + (jitter.y - 0.5) * 0.14, 0.02, 0.98));
       float twinRadius = radius * mix(0.34, 0.55, hash21(seed + 31.0));
-      total += animatedSigil(ray, twinCenter, twinRadius, time * 0.82, phase - 1.9, mod(variant + 2.0, 4.0)) * 0.34;
+      if (sigilMayOverlapLatitude(rayLatitude, twinCenter, twinRadius)) {
+        total += animatedSigil(ray, twinCenter, twinRadius, time * 0.82, phase - 1.9, mod(variant + 2.0, 4.0)) * 0.34;
+      }
     }
   }
   return total;
@@ -491,12 +508,16 @@ function compileShader(gl: WebGL, type: number, source: string) {
   return shader;
 }
 
-export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl: string): VirtualWindowRenderer | null {
+export function createVirtualWindowRenderer(
+  canvas: HTMLCanvasElement,
+  imageUrl: string,
+  options: VirtualWindowRendererOptions = {}
+): VirtualWindowRenderer | null {
   const context = canvas.getContext('webgl', {
     alpha: false,
     antialias: false,
     depth: false,
-    preserveDrawingBuffer: true,
+    preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
     powerPreference: 'low-power'
   });
   if (!context || typeof context.createShader !== 'function') return null;
@@ -650,7 +671,7 @@ export function createVirtualWindowRenderer(canvas: HTMLCanvasElement, imageUrl:
     gl.activeTexture(gl.TEXTURE0);
     draw();
   };
-  earthImage.src = '/media/earth-blue-marble.png';
+  earthImage.src = '/media/earth-blue-marble.webp';
   draw();
 
   return {

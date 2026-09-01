@@ -1,7 +1,6 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Coins, Cpu, MemoryStick } from 'lucide-react';
-import { useLoad } from '../hooks';
+import { useLoad, useVisiblePolling } from '../hooks';
 import { api } from '../api';
 import { memoryPercent } from '../metrics';
 
@@ -12,11 +11,8 @@ function equalMetrics(current: Awaited<ReturnType<typeof api.metrics>>, next: Aw
 export function SystemWidget() {
   const { data, reload } = useLoad(api.metrics, [], equalMetrics);
   const { data: copilot, reload: reloadCopilot } = useLoad(api.copilotUsage, []);
-  useEffect(() => {
-    const refresh = window.setInterval(() => void reload(false), 2_000);
-    const refreshCopilot = window.setInterval(() => void reloadCopilot(false), 60_000);
-    return () => { window.clearInterval(refresh); window.clearInterval(refreshCopilot); };
-  }, [reload, reloadCopilot]);
+  useVisiblePolling(() => void reload(false), 2_000);
+  useVisiblePolling(() => void reloadCopilot(false), 60_000);
   if (!data?.history) return <Link to="/system" className="system-widget system-widget-empty" aria-label="System performance">
     <span className="muted">System…</span>
   </Link>;

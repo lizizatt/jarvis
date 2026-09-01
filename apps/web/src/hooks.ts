@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useLoad<T>(loader: () => Promise<T>, dependencies: readonly unknown[], isEqual?: (current: T, next: T) => boolean) {
   const [data, setData] = useState<T>();
@@ -16,6 +16,22 @@ export function useLoad<T>(loader: () => Promise<T>, dependencies: readonly unkn
   }, dependencies);
   useEffect(() => { void reload(); }, [reload]);
   return { data, setData, error, loading, reload };
+}
+
+export function useVisiblePolling(callback: () => void, intervalMs: number) {
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+  useEffect(() => {
+    const refresh = () => {
+      if (!document.hidden) callbackRef.current();
+    };
+    const interval = window.setInterval(refresh, intervalMs);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [intervalMs]);
 }
 
 export function elapsed(from?: string, to?: string) {
