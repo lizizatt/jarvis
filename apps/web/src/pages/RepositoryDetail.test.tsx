@@ -77,6 +77,35 @@ test('selects and displays the model for a new conversation', async () => {
   expect(JSON.parse(String(creation?.[1]?.body))).toMatchObject({ prompt: 'Use selected model', modelId: 'gpt-test' });
 });
 
+test('allows starting with Auto when no explicit models are returned', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/repositories/repo-1') return new Response(JSON.stringify({ id: 'repo-1', name: 'Planner', path: '/src/planner', defaultBranch: 'main' }));
+    if (url === '/api/repositories/repo-1/status') return new Response(JSON.stringify({ branch: 'main', dirty: false, ahead: 0, behind: 0 }));
+    if (url === '/api/repositories/repo-1/tasks') {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { modelId: string; prompt: string };
+        return new Response(JSON.stringify({ id: 'task-auto', repositoryId: 'repo-1', state: 'running',
+          modelId: body.modelId, title: body.prompt, createdAt: '2026-08-07T12:00:00Z' }));
+      }
+      return new Response(JSON.stringify([]));
+    }
+    if (url === '/api/repositories/repo-1/models') return new Response(JSON.stringify([]));
+    if (url.startsWith('/api/tasks/task-auto/events')) return new Response(JSON.stringify([]));
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+
+  await screen.findByTestId('start-task');
+  await userEvent.type(screen.getByLabelText('Task prompt'), 'Run with auto model');
+  await userEvent.click(screen.getByRole('button', { name: 'Start agent' }));
+
+  const creation = fetchMock.mock.calls.find(([input, init]) => String(input) === '/api/repositories/repo-1/tasks' && init?.method === 'POST');
+  expect(JSON.parse(String(creation?.[1]?.body))).toMatchObject({ prompt: 'Run with auto model', modelId: 'auto' });
+  expect(await screen.findByTestId('task-task-auto')).toBeVisible();
+});
+
 test('does not apply a previously selected task lifecycle state after switching tasks', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
