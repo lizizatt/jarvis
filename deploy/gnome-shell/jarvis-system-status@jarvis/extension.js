@@ -46,7 +46,7 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._indicator = new JarvisIndicator();
     this._box = new St.BoxLayout({ style_class: 'panel-status-menu-box' });
     this._dashboard = this._clickableLabel('🏳️‍⚧️', () => this._openUrl(DASHBOARD_URL));
-    this._dashboard.tooltip_text = 'Open Jarvis';
+    this._dashboard.jarvisTooltipText = 'Open Jarvis';
     this._cpu = this._clickableLabel('CPU --%', () => this._launchHtop());
     this._memory = this._clickableLabel('RAM --%', () => this._launchHtop());
     this._creditText = 'CR --';
@@ -55,6 +55,8 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._repositoryActors = new Map();
     this._workerWindows = new Map();
     this._workersRefreshInFlight = false;
+    this._tooltip = new St.Label({ style_class: 'jarvis-tooltip', visible: false });
+    Main.layoutManager.addTopChrome(this._tooltip, { affectsInputRegion: false });
     const bridge = Gio.DBusExportedObject.wrapJSObject(WINDOW_BRIDGE_XML, this);
     this._bridge = bridge;
     this._bridgeBusOwner = Gio.bus_own_name(
@@ -100,6 +102,8 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._workersTimer = null;
     this._session?.abort();
     this._session = null;
+    this._tooltip?.destroy();
+    this._tooltip = null;
     this._indicator?.destroy();
     this._indicator = null;
     this._box = null;
@@ -127,12 +131,30 @@ export default class JarvisSystemStatusExtension extends Extension {
   _clickableLabel(text, activate) {
     const label = new St.Label({ text, y_align: Clutter.ActorAlign.CENTER, reactive: true, track_hover: true });
     label.add_style_class_name('jarvis-status-item');
+    label.connect('notify::hover', () => this._syncTooltip(label));
     label.connect('button-press-event', (_actor, event) => {
       if (event.get_button() !== Clutter.BUTTON_PRIMARY) return Clutter.EVENT_PROPAGATE;
       activate();
       return Clutter.EVENT_STOP;
     });
     return label;
+  }
+
+  _syncTooltip(actor) {
+    if (!this._tooltip) return;
+    if (!actor.hover || !actor.jarvisTooltipText) {
+      this._tooltip.hide();
+      return;
+    }
+    this._tooltip.text = actor.jarvisTooltipText;
+    this._tooltip.show();
+    const [stageX, stageY] = actor.get_transformed_position();
+    const [, actorHeight] = actor.get_transformed_size();
+    const tooltipWidth = this._tooltip.get_width();
+    const tooltipHeight = this._tooltip.get_height();
+    const x = Math.clamp(stageX + (actor.width - tooltipWidth) / 2, 0, global.stage.width - tooltipWidth);
+    const y = Math.min(stageY + actorHeight + 6, global.stage.height - tooltipHeight);
+    this._tooltip.set_position(Math.floor(x), Math.floor(y));
   }
 
   _launchHtop() {
@@ -164,7 +186,7 @@ export default class JarvisSystemStatusExtension extends Extension {
     });
     try {
       const bytes = await session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, cancellable);
-      if (message.get_status() !== Soup.Status.OK) throw new Error(`HTTP ${message.get_status()}`);
+      if (message.get_status() < 200 || message.get_status() >= 300) throw new Error(`HTTP ${message.get_status()}`);
       return JSON.parse(new TextDecoder().decode(bytes.get_data()));
     } catch (error) {
       console.debug(`Jarvis system status: ${error.message}`);
@@ -229,7 +251,7 @@ export default class JarvisSystemStatusExtension extends Extension {
           this._workersBox.add_child(actor);
         }
         actor.text = text;
-        actor.tooltip_text = worker
+        actor.jarvisTooltipText = worker
           ? `${repository.name}\nWindow: ${this._presenceText(worker.presence)}\nJarvis: ${this._activityText(activity)}`
           : `${repository.name}\nWindow: closed`;
         actor.jarvisRepository = repository;
@@ -261,20 +283,20 @@ export default class JarvisSystemStatusExtension extends Extension {
     return activity === 'needs-input' ? 'needs input' : activity === 'thinking' ? 'thinking' : 'idle';
   }
 
-  async _activateRepository(repository, worker) {
-    if (worker) {
-      this._focusWorker(worker);
-      return;
+  _activateRepository(repository, worker) {
+    if (worker && this._focusWorker(worker)) return;
+    try {
+      Gio.Subprocess.new(['code', repository.path], Gio.SubprocessFlags.NONE);
+    } catch (error) {
+      console.error(`Jarvis system status: unable to open Copilot for ${repository.name}: ${error.message}`);
     }
-    const result = await this._fetch(`repositories/${encodeURIComponent(repository.id)}/copilot`, 'POST');
-    if (!result) console.warn(`Jarvis system status: unable to open Copilot for ${repository.name}`);
   }
 
   _focusWorker(worker) {
     const registeredWindow = this._workerWindows.get(worker.workerId);
     if (registeredWindow?.get_compositor_private()) {
       Main.activateWindow(registeredWindow);
-      return;
+      return true;
     }
     this._workerWindows.delete(worker.workerId);
     const names = [worker.windowName, ...(worker.workspaceRoots ?? []).map((root) => root.split('/').pop())]
@@ -292,13 +314,14 @@ export default class JarvisSystemStatusExtension extends Extension {
       : pidMatches.length === 1 ? pidMatches[0] : null;
     if (window) {
       Main.activateWindow(window);
-      return;
+      return true;
     }
     if (titleMatches.length > 1) {
       console.warn(`Jarvis system status: multiple VS Code windows match ${worker.windowName}`);
-      return;
+      return false;
     }
     console.warn(`Jarvis system status: no unambiguous window found for ${worker.windowName}`);
+    return false;
   }
 
 }
