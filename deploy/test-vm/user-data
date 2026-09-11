@@ -32,6 +32,7 @@ runcmd:
       install -m 0444 /mnt/jarvis-cidata/source-content-validation.json /opt/jarvis-vm-gate/source-content-validation.json
       install -m 0755 /mnt/jarvis-cidata/bootstrap.sh /opt/jarvis-vm-gate/bootstrap.sh
       install -m 0755 /mnt/jarvis-cidata/guest-gate.sh /opt/jarvis-vm-gate/guest-gate.sh
+      install -m 0755 /mnt/jarvis-cidata/boot-readiness.sh /opt/jarvis-vm-gate/boot-readiness.sh
       install -m 0644 /mnt/jarvis-cidata/jarvis-vm-gate-phase2.service /etc/systemd/system/jarvis-vm-gate-phase2.service
       chown -R gate:gate /workspace
       install -d -o gate -g gate -m 0700 /home/gate/.jarvis-vm-gate

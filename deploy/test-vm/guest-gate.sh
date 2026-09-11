@@ -15,6 +15,7 @@ readonly EVIDENCE_ROOT="$HOME/.jarvis-vm-gate"
 readonly PHASE_MODE="${1:-}"
 readonly RUN_STARTED_FILE="$EVIDENCE_ROOT/run-started-epoch"
 readonly BOOT_ID_FILE="$EVIDENCE_ROOT/phase1-boot-id"
+readonly BOOT_READINESS_HELPER=/opt/jarvis-vm-gate/boot-readiness.sh
 
 guard_fail() {
   printf 'VM_GATE|RESULT|FAIL|phase=guard|detail=%s\n' "$1" >&2
@@ -27,6 +28,8 @@ guard_fail() {
 [[ "$(< /etc/jarvis-disposable-vm-gate)" == "$SENTINEL_VALUE" ]] || guard_fail invalid-sentinel-file
 [[ "$(id -u)" == 2000 ]] || guard_fail unexpected-user
 [[ "$REPO_ROOT" == /workspace && "$GATE_ROOT" == /home/gate/vm-gate ]] || guard_fail unexpected-fixed-path
+[[ -r "$BOOT_READINESS_HELPER" ]] || guard_fail missing-boot-readiness-helper
+source "$BOOT_READINESS_HELPER"
 
 CURRENT_PHASE=bootstrap
 PHASE_STARTED_NS=0
@@ -497,6 +500,7 @@ run_phase2() {
   [[ -f "$EVIDENCE_ROOT/phase1-complete" ]] || fail "phase 1 marker is missing"
   [[ "$(< "$BOOT_ID_FILE")" != "$(< /proc/sys/kernel/random/boot_id)" ]] \
     || fail "boot ID did not change"
+  wait_for_boot_readiness 60
   assert_core_ready
   assert_active_enabled jarvis-alpha-renamed.service
   assert_http_ok http://127.0.0.1:4311/health

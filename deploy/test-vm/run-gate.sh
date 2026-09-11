@@ -160,7 +160,8 @@ cp "$SOURCE_REPORT" "$RUN_ROOT/seed-input/source-content-validation.json"
 } > "$RUN_ROOT/host-metadata.txt"
 
 cp "$SCRIPT_DIR/user-data" "$SCRIPT_DIR/meta-data" "$SCRIPT_DIR/bootstrap.sh" \
-  "$SCRIPT_DIR/guest-gate.sh" "$SCRIPT_DIR/jarvis-vm-gate-phase2.service" \
+  "$SCRIPT_DIR/guest-gate.sh" "$SCRIPT_DIR/boot-readiness.sh" \
+  "$SCRIPT_DIR/jarvis-vm-gate-phase2.service" \
   "$RUN_ROOT/seed-input/"
 
 created_container="$(docker create --user root --entrypoint /bin/bash "$docker_image_id" \
