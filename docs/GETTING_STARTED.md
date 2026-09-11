@@ -7,9 +7,8 @@ Run repository commands from the Jarvis root.
 - Node.js 20.19 or newer and npm
 - VS Code 1.125 or newer, with the `code` CLI in `PATH`
 - GitHub Copilot signed in within VS Code
-- Tailscale on the laptop and phone for private remote access
 
-The normal backend is the VS Code worker. The Copilot CLI is not required.
+The normal backend is the VS Code worker. The Copilot CLI is not required. Tailscale is optional and needed only for private remote access.
 
 ## Install
 
@@ -25,7 +24,15 @@ bash deploy/systemd/install.sh
 
 The worker install creates an ignored VSIX, installs it locally, and leaves the artifact under `apps/vscode-worker`. Do not commit it.
 
-The systemd installer builds Jarvis, creates `~/.config/jarvis/.env` on first use, and enables the Jarvis, terminal-host, and Jam Assistant user services. It does not install or reload the VS Code extension.
+The systemd installer builds Jarvis, creates `~/.config/jarvis/.env` on first use, and enables the Jarvis and terminal-host user services. It does not install or reload the VS Code extension.
+
+To replace the managed deployment selection, pass the complete desired list as absolute manifest paths:
+
+```bash
+bash deploy/systemd/install.sh /absolute/project-a/jarvis.deployment.json /absolute/project-b/jarvis.deployment.json
+```
+
+A later no-argument run preserves that installed selection. Use `--core-only` to explicitly replace it with no managed deployments.
 
 ## Connect a Checkout
 
@@ -59,14 +66,16 @@ Open the resulting HTTPS URL on the phone and install the PWA. See [PWA Mobile S
 ## Verify
 
 ```bash
-systemctl --user is-active jarvis jarvis-terminal-host jarvis-jam-assistant
+systemctl --user is-active jarvis
+systemctl --user is-active jarvis-terminal-host
 curl -fsS http://127.0.0.1:3210/api/health
-curl -fsS http://127.0.0.1:4173/
+curl -fsS http://127.0.0.1:3210/api/readiness
+curl -fsS http://127.0.0.1:3210/
 curl -fsS http://127.0.0.1:3210/api/workers
 code --list-extensions --show-versions | grep jarvis-local.jarvis-copilot-worker
 ```
 
-Both services should report `active`; health should return `ok: true`; and each usable repository should appear in `/api/workers` with at least one model.
+Both core services should independently report `active`; liveness and readiness should return `ok: true`; the PWA request should return HTML; and each usable repository should appear in `/api/workers` with at least one model. Readiness covers the web entry and terminal socket, not worker presence. Verify every selected managed deployment separately at its declared health URL.
 
 ## Next Steps
 

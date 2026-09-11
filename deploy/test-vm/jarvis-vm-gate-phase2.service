@@ -1,0 +1,11 @@
+[Unit]
+Description=Jarvis disposable VM gate phase 2
+ConditionPathExists=/home/gate/.jarvis-vm-gate/phase1-complete
+
+[Service]
+Type=oneshot
+ExecStart=/opt/jarvis-vm-gate/bootstrap.sh phase2
+TimeoutStartSec=12min
+
+[Install]
+WantedBy=multi-user.target

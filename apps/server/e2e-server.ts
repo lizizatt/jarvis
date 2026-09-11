@@ -44,6 +44,7 @@ async function main(): Promise<void> {
     agentBackend: 'cli',
     policy: 'E2E TEST POLICY',
     webRoot,
+    readinessWebRequired: true,
     terminalHostScript,
     maxJsonLineBytes: 1024 * 1024,
     maxStderrChunkBytes: 64 * 1024,

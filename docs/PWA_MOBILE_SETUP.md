@@ -7,8 +7,11 @@ Jarvis is intended to remain bound to localhost and reach a phone through privat
 On the laptop:
 
 ```bash
-systemctl --user is-active jarvis jarvis-terminal-host
+systemctl --user is-active jarvis
+systemctl --user is-active jarvis-terminal-host
 curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:3210/api/readiness
+curl -fsS http://127.0.0.1:3210/
 tailscale serve --bg http://127.0.0.1:3210
 tailscale status
 ```
@@ -40,8 +43,11 @@ No Jarvis service restart is required. The service worker uses auto-update regis
 ### URL is unreachable
 
 ```bash
-systemctl --user is-active jarvis jarvis-terminal-host
+systemctl --user is-active jarvis
+systemctl --user is-active jarvis-terminal-host
 curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:3210/api/readiness
+curl -fsS http://127.0.0.1:3210/
 tailscale status
 journalctl --user -u jarvis -n 100 --no-pager
 ```

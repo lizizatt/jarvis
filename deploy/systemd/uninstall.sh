@@ -4,22 +4,48 @@ set -euo pipefail
 # Jarvis Systemd Uninstallation Script
 # Removes Jarvis systemd service and optionally backs up configuration.
 
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 readonly SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 readonly JARVIS_CONFIG_DIR="${HOME}/.config/jarvis"
+readonly DEPLOYMENT_INDEX="${JARVIS_CONFIG_DIR}/deployments.tsv"
 readonly SERVICE_NAME="jarvis"
 readonly TERMINAL_SERVICE_NAME="jarvis-terminal-host"
-readonly DEPLOYMENT_REGISTRY="${JARVIS_DEPLOYMENT_REGISTRY:-${JARVIS_CONFIG_DIR}/deployments.json}"
-managed_units=()
-if [[ -f "$DEPLOYMENT_REGISTRY" ]]; then
-  while IFS= read -r unit; do managed_units+=("$unit"); done < <(node -e '
-    const fs = require("node:fs");
-    const registry = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    for (const manifestPath of registry.manifests ?? []) {
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-      if (manifest.kind === "managed" && /^jarvis-[a-z0-9-]+\.service$/.test(manifest.systemdUnit)) console.log(manifest.systemdUnit);
-    }
-  ' "$DEPLOYMENT_REGISTRY")
+readonly NODE_EXECUTABLE="$(command -v node || true)"
+readonly RESOLVE_INSTALLATION_TOOL="$REPO_ROOT/tools/resolve-installation.mjs"
+if [[ "$NODE_EXECUTABLE" != /* ]]; then
+  echo "ERROR: 'node' must resolve to an absolute path"
+  exit 1
 fi
+if ! registry_plan="$($NODE_EXECUTABLE "$RESOLVE_INSTALLATION_TOOL" registry \
+  --operator-env "$JARVIS_CONFIG_DIR/.env" --previous-effective-env "$JARVIS_CONFIG_DIR/effective.env" \
+  --default-registry "$JARVIS_CONFIG_DIR/deployments.json")"; then
+  exit 1
+fi
+deployment_registry=''
+while IFS=$'\t' read -r key value; do
+  case "$key" in
+    REGISTRY) deployment_registry="$value" ;;
+    *) echo "ERROR: Invalid registry plan entry: $key"; exit 1 ;;
+  esac
+done <<< "$registry_plan"
+if [[ -z "$deployment_registry" ]]; then
+  echo "ERROR: Registry plan is incomplete"
+  exit 1
+fi
+readonly DEPLOYMENT_REGISTRY="$deployment_registry"
+managed_units=()
+if ! installation_inventory="$($NODE_EXECUTABLE "$RESOLVE_INSTALLATION_TOOL" inventory \
+  --registry "$DEPLOYMENT_REGISTRY" --legacy-index "$DEPLOYMENT_INDEX")"; then
+  exit 1
+fi
+while IFS=$'\t' read -r kind unit _phase; do
+  [[ -z "$kind" ]] && continue
+  case "$kind" in
+    MANAGED|RETIRING) managed_units+=("$unit") ;;
+    *) echo "ERROR: Invalid installation inventory entry: $kind"; exit 1 ;;
+  esac
+done <<< "$installation_inventory"
 
 echo "=== Jarvis Systemd Uninstallation ==="
 echo ""

@@ -1,6 +1,7 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,11 +9,12 @@ import { promisify } from 'node:util';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
-import { isLoopbackHost, positiveInteger } from '../src/config.js';
+import { absolutePath, isLoopbackHost, nodeTimeout, positiveInteger, tcpPort } from '../src/config.js';
 import { Store } from '../src/database.js';
 import { normalizePullRequest } from '../src/git.js';
 import { readPreviewFile } from '../src/previews.js';
 import { JsonLineParser } from '../src/tasks.js';
+import { TerminalManager } from '../src/terminals.js';
 import type { ServerConfig, Task } from '../src/types.js';
 import { modelHistory } from '../src/workers.js';
 
@@ -50,6 +52,112 @@ describe('server MVP', () => {
     const app = await trackedApp(configuration(sandbox.dataDir));
     expect((await app.inject({ method: 'GET', url: '/api/health' })).json()).toEqual({ ok: true, interruptedOnStartup: 1 });
     expect((await app.inject({ method: 'GET', url: '/api/tasks/task' })).json().state).toBe('interrupted');
+  });
+
+  it('keeps liveness healthy while required web and terminal capabilities are unavailable', async () => {
+    const sandbox = await makeSandbox();
+    const webRoot = join(sandbox.root, 'web');
+    await mkdir(webRoot);
+    const app = await trackedApp({
+      ...configuration(sandbox.dataDir),
+      webRoot,
+      readinessWebRequired: true,
+      readinessTerminalHostRequired: true,
+    });
+
+    const health = await app.inject({ method: 'GET', url: '/api/health' });
+    expect(health.statusCode).toBe(200);
+    expect(health.json()).toMatchObject({ ok: true });
+
+    const readiness = await app.inject({ method: 'GET', url: '/api/readiness' });
+    expect(readiness.statusCode).toBe(503);
+    expect(readiness.json()).toEqual({
+      ok: false,
+      checks: {
+        web: { ok: false, detail: `Web entry file is missing: ${join(webRoot, 'index.html')}` },
+        terminalHost: { ok: false, detail: `Terminal host socket is unavailable: ${join(sandbox.dataDir, 'terminal-host.sock')}` },
+      },
+    });
+    expect(existsSync(join(sandbox.dataDir, 'terminal-host.sock'))).toBe(false);
+    expect(existsSync(join(sandbox.dataDir, 'terminal-host.sock.pid'))).toBe(false);
+  });
+
+  it('stays unready when the web entry appears after static route registration was skipped', async () => {
+    const sandbox = await makeSandbox();
+    const webRoot = join(sandbox.root, 'late-web');
+    const app = await trackedApp({
+      ...configuration(sandbox.dataDir),
+      webRoot,
+      readinessWebRequired: true,
+    });
+
+    await mkdir(webRoot);
+    await writeFile(join(webRoot, 'index.html'), '<main>Too late</main>');
+
+    const readiness = await app.inject({ method: 'GET', url: '/api/readiness' });
+    expect(readiness.statusCode).toBe(503);
+    expect(readiness.json()).toMatchObject({ ok: false, checks: { web: { ok: false } } });
+    expect((await app.inject({ method: 'GET', url: '/' })).statusCode).toBe(404);
+  });
+
+  it('rejects a terminal host peer that closes without answering the protocol probe', async () => {
+    const sandbox = await makeSandbox();
+    const socketPath = join(sandbox.dataDir, 'terminal-host.sock');
+    await mkdir(sandbox.dataDir);
+    const terminalSocketServer = createServer((socket) => { socket.resume(); socket.end(); });
+    await new Promise<void>((resolvePromise, reject) => {
+      terminalSocketServer.once('error', reject);
+      terminalSocketServer.listen(socketPath, resolvePromise);
+    });
+
+    try {
+      const terminals = new TerminalManager(socketPath, terminalHost, true);
+      expect(await terminals.isHostAvailable()).toBe(false);
+    } finally {
+      await new Promise<void>((resolvePromise, reject) => terminalSocketServer.close((error) => error ? reject(error) : resolvePromise()));
+    }
+  });
+
+  it('rejects a terminal host peer that accepts the probe without responding', async () => {
+    const sandbox = await makeSandbox();
+    const socketPath = join(sandbox.dataDir, 'terminal-host.sock');
+    await mkdir(sandbox.dataDir);
+    const terminalSocketServer = createServer((socket) => socket.resume());
+    await new Promise<void>((resolvePromise, reject) => {
+      terminalSocketServer.once('error', reject);
+      terminalSocketServer.listen(socketPath, resolvePromise);
+    });
+
+    try {
+      const terminals = new TerminalManager(socketPath, terminalHost, true);
+      expect(await terminals.isHostAvailable()).toBe(false);
+    } finally {
+      await new Promise<void>((resolvePromise, reject) => terminalSocketServer.close((error) => error ? reject(error) : resolvePromise()));
+    }
+  });
+
+  it('reports ready when the web entry exists and the real terminal host answers the protocol probe', async () => {
+    const sandbox = await makeSandbox();
+    const webRoot = join(sandbox.root, 'web');
+    const socketPath = join(sandbox.dataDir, 'terminal-host.sock');
+    await Promise.all([mkdir(webRoot), mkdir(sandbox.dataDir)]);
+    await writeFile(join(webRoot, 'index.html'), '<main>Jarvis fixture</main>');
+    await startTerminalHost(socketPath);
+    const app = await trackedApp({
+      ...configuration(sandbox.dataDir),
+      webRoot,
+      readinessWebRequired: true,
+      readinessTerminalHostRequired: true,
+    });
+
+    const readiness = await app.inject({ method: 'GET', url: '/api/readiness' });
+    expect(readiness.statusCode).toBe(200);
+    expect(readiness.json()).toEqual({
+      ok: true,
+      checks: { web: { ok: true }, terminalHost: { ok: true } },
+    });
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()).toEqual([]);
+    expect((await app.inject({ method: 'GET', url: '/' })).body).toContain('Jarvis fixture');
   });
 
   it('reports current host metrics with per-core load and bounded history', async () => {
@@ -136,6 +244,49 @@ fi
     expect((await app.inject({ method: 'POST', url: '/api/deployments/alesis/actions', payload: { action: 'start' } })).statusCode).toBe(200);
     expect((await app.inject({ method: 'POST', url: '/api/deployments/missing/actions', payload: { action: 'restart' } })).statusCode).toBe(404);
     expect(await readFile(calls, 'utf8')).toBe('--user start jarvis-alesis.service\n');
+  });
+
+  it('allows a delayed managed action to finish within its configured budget', async () => {
+    const sandbox = await makeSandbox();
+    const app = await deploymentActionApp(sandbox, 'setTimeout(() => process.exit(0), 30);', 100);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/deployments/alesis/actions',
+      payload: { action: 'restart' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accepted: true, scheduled: false });
+  });
+
+  it('reports a managed action timeout separately from command failures', async () => {
+    const sandbox = await makeSandbox();
+    const app = await deploymentActionApp(sandbox, 'setTimeout(() => process.exit(0), 100);', 10);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/deployments/alesis/actions',
+      payload: { action: 'restart' },
+    });
+
+    expect(response.statusCode).toBe(504);
+    expect(response.json()).toEqual({ error: 'Managed action restart for Alesis timed out after 10 ms' });
+  });
+
+  it('reports a managed action command error without classifying it as a timeout', async () => {
+    const sandbox = await makeSandbox();
+    const app = await deploymentActionApp(sandbox, "process.stderr.write('fixture action failed\\n'); process.exit(23);", 100);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/deployments/alesis/actions',
+      payload: { action: 'restart' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('fixture action failed');
+    expect(response.json().error).not.toContain('timed out');
   });
 
   it('registers only real checkout roots and reports status and both diffs', async () => {
@@ -804,6 +955,24 @@ describe('server configuration', () => {
       expect(() => positiveInteger(invalid, 64, 'LIMIT')).toThrow('LIMIT must be a positive integer');
     }
   });
+
+  it('caps Node timeouts without restricting unrelated positive integers', () => {
+    expect(nodeTimeout(undefined, 45_000, 'TIMEOUT')).toBe(45_000);
+    expect(nodeTimeout('2147483647', 45_000, 'TIMEOUT')).toBe(2_147_483_647);
+    expect(() => nodeTimeout('2147483648', 45_000, 'TIMEOUT'))
+      .toThrow('TIMEOUT must be a positive integer no greater than 2147483647');
+    expect(positiveInteger('2147483648', 64, 'LIMIT')).toBe(2_147_483_648);
+  });
+
+  it('accepts only TCP ports and absolute configured paths', () => {
+    expect(tcpPort(undefined, 3210, 'JARVIS_PORT')).toBe(3210);
+    expect(tcpPort('4321', 3210, 'JARVIS_PORT')).toBe(4321);
+    for (const invalid of ['0', '65536', '1.5', 'NaN']) {
+      expect(() => tcpPort(invalid, 3210, 'JARVIS_PORT')).toThrow('JARVIS_PORT must be an integer from 1 through 65535');
+    }
+    expect(absolutePath('/tmp/deployments.json', '/default', 'REGISTRY')).toBe('/tmp/deployments.json');
+    expect(() => absolutePath('deployments.json', '/default', 'REGISTRY')).toThrow('REGISTRY must be an absolute path');
+  });
 });
 
 describe('GitHub pull request normalization', () => {
@@ -836,6 +1005,23 @@ function configuration(dataDir: string): ServerConfig {
     terminalHostScript: terminalHost, maxJsonLineBytes: 1024 * 1024, maxStderrChunkBytes: 64 * 1024 };
 }
 
+async function deploymentActionApp(sandbox: { root: string; dataDir: string }, actionSource: string,
+  timeoutMs: number): Promise<Awaited<ReturnType<typeof createApp>>> {
+  const systemctl = join(sandbox.root, 'systemctl.mjs');
+  const manifest = join(sandbox.root, 'deployment.json');
+  const registry = join(sandbox.root, 'deployments.json');
+  await writeFile(systemctl, `#!${process.execPath}\n${actionSource}\n`, { mode: 0o700 });
+  await writeFile(manifest, JSON.stringify({ version: 1, id: 'alesis', name: 'Alesis', kind: 'managed',
+    systemdUnit: 'jarvis-alesis.service', runner: 'deploy/run-jarvis.sh', actions: ['start', 'stop', 'restart'] }));
+  await writeFile(registry, JSON.stringify({ version: 1, manifests: [manifest] }));
+  return trackedApp({
+    ...configuration(sandbox.dataDir),
+    deploymentRegistryFile: registry,
+    systemctlExecutable: systemctl,
+    deploymentActionTimeoutMs: timeoutMs,
+  });
+}
+
 async function trackedApp(config: ServerConfig): Promise<Awaited<ReturnType<typeof createApp>>> {
   const app = await createApp(config); apps.push(app); return app;
 }
@@ -854,6 +1040,17 @@ async function waitFor(predicate: () => Promise<boolean>, timeout = 5000): Promi
   const end = Date.now() + timeout;
   while (Date.now() < end) { if (await predicate()) return; await new Promise((resolve) => setTimeout(resolve, 20)); }
   throw new Error('Timed out waiting for condition');
+}
+async function startTerminalHost(socketPath: string): Promise<void> {
+  const child = spawn(process.execPath, ['--import', 'tsx', terminalHost, socketPath], { stdio: 'ignore' });
+  await new Promise<void>((resolvePromise, reject) => {
+    child.once('spawn', resolvePromise);
+    child.once('error', reject);
+  });
+  if (!child.pid) throw new Error('Terminal host did not report a process ID');
+  hostPids.push(child.pid);
+  const terminals = new TerminalManager(socketPath, terminalHost, true);
+  await waitFor(() => terminals.isHostAvailable());
 }
 async function onceOpen(socket: WebSocket): Promise<void> {
   if (socket.readyState === socket.OPEN) return;

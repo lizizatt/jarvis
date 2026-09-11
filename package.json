@@ -15,10 +15,15 @@
     "dev:web": "npm run dev --workspace @jarvis/web",
     "lint": "eslint .",
     "repo:add": "node tools/register-repository.mjs",
+    "prepare:container-context": "node tools/prepare-container-context.mjs",
     "digital-window:harness": "node scripts/digital-window-harness.mjs",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run test:deployment && npm run test:isolated-runner",
+    "test:deployment": "node --test deploy/systemd/install.test.mjs",
+    "test:isolated-runner": "node --test tools/isolated-runner.test.mjs",
     "test:e2e": "npm run build --workspace @jarvis/web && playwright test",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "validate:isolated": "node tools/isolated-runner.mjs --smoke",
+    "validate:isolated:full": "node tools/isolated-runner.mjs --full"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

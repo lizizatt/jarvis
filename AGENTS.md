@@ -27,7 +27,16 @@ Follow instructions in the target repository. `JARVIS_POLICY` adds runtime guida
 - `apps/web`: React/Vite PWA served from `apps/web/dist` in production.
 - `apps/vscode-worker`: VS Code extension using the public Language Model API and worker protocol v2.
 - `deploy/systemd`: per-user service installer and unit templates.
+- `deploy/test-vm`: one-off disposable VM lifecycle evidence pinned to this checkout and its approved source context.
 - `tools`: repository registration and smoke-test utilities.
+
+## One-Off VM Evidence Run
+
+`deploy/test-vm/run-gate.sh` is not a reusable release gate. It is pinned to the host checkout at `/home/liz.izatt/jarvis`, the approved source root at `/tmp/jarvis-release-gate-duFf9r/context-v2`, and a gate root matching `/tmp/jarvis-release-gate-*/vm`.
+
+The approved source root must contain `.jarvis-container-context.json` and every source file listed in that manifest. A run writes only its image cache under `<gate-root>/images` and its session files under `<gate-root>/runs/<UTC-timestamp>-<pid>`. The retained session files include host metadata, the tested source-content and omission report, serial output, QEMU diagnostics, and the phase summary; staging data, the seed ISO, containers, and the writable VM overlay are removed.
+
+The container reference is only a lookup key. The script inspects it once, uses the resulting immutable image ID for container creation, and validates source bytes present in the image against the approved context. When supplied, `JARVIS_VM_GATE_EXPECTED_IMAGE_ID` adds an exact image-ID check. The script must not read `~/.jarvis`, Copilot or editor session storage, or host Jarvis services. Because the payload has no actual older revision, successful execution is partial lifecycle evidence, not a full release result.
 
 ## Validation
 
@@ -38,6 +47,7 @@ Run commands from the repository root unless noted.
 | `apps/server` | `npm test --workspace @jarvis/server` |
 | `apps/web` | `npm test --workspace @jarvis/web` |
 | `apps/vscode-worker` | `npm run typecheck --workspace jarvis-copilot-worker` |
+| `deploy/test-vm` | `deploy/test-vm/test.sh`; do not launch `run-gate.sh` as routine validation |
 | docs/config/scripts | inspect the diff and run the command or parser affected |
 
 Before handing off a code change, run:
@@ -67,8 +77,11 @@ Deploy only after validation and explicit permission. Never revert source to rol
 Use these checks after a service restart:
 
 ```bash
-systemctl --user is-active jarvis jarvis-terminal-host
+systemctl --user is-active jarvis
+systemctl --user is-active jarvis-terminal-host
 curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:3210/api/readiness
+curl -fsS http://127.0.0.1:3210/
 curl -fsS http://127.0.0.1:3210/api/workers
 ```
 

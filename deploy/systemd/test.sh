@@ -34,12 +34,16 @@ cat > "$project/jarvis.deployment.json" <<'MANIFEST'
 }
 MANIFEST
 
-node "$ROOT/tools/reconcile-deployments.mjs" --build --output "$index" --registry "$registry" \
+node "$ROOT/tools/reconcile-deployments.mjs" --build --build-path "$PATH" --output "$index" --registry "$registry" \
   --systemd-dir "$systemd_dir" --template "$SCRIPT_DIR/managed-deployment.service.template" \
-  "$ROOT/jarvis.deployment.json" "$project/jarvis.deployment.json"
+  --previous-registry "$TMP_DIR/previous-deployments.json" --previous-index "$TMP_DIR/previous-deployments.tsv" \
+  --selection replace \
+  --self-manifest "$ROOT/jarvis.deployment.json" --self-provenance "$ROOT/jarvis.deployment.json" \
+  "$project/jarvis.deployment.json"
 
 grep -Fq $'jarvis-fixture.service\thttp://127.0.0.1:9999/health' "$index"
-grep -Fq '/jarvis.deployment.json"' "$registry"
+grep -Fq '"version": 2' "$registry"
+grep -Fq '"manifestPath": "'"$project"'/jarvis.deployment.json"' "$registry"
 grep -Fq 'ExecStart="'"$project"'/deploy/run-jarvis.sh"' "$systemd_dir/jarvis-fixture.service"
 grep -Fq 'WorkingDirectory='"$project" "$systemd_dir/jarvis-fixture.service"
 test "$(cat "$project/built")" = yes

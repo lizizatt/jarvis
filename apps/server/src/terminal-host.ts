@@ -3,7 +3,7 @@ import { createServer, type Socket } from 'node:net';
 import { dirname } from 'node:path';
 import process from 'node:process';
 import * as pty from 'node-pty';
-import type { TerminalCommand, TerminalMessage } from './terminal-protocol.js';
+import { TERMINAL_PROTOCOL_VERSION, type TerminalCommand, type TerminalMessage } from './terminal-protocol.js';
 
 const socketPath = process.argv[2];
 if (!socketPath) throw new Error('Terminal host requires a Unix socket path');
@@ -47,6 +47,11 @@ const server = createServer((socket) => {
 server.listen(socketPath, () => chmodSync(socketPath, 0o600));
 
 function handle(socket: Socket, attached: Set<string>, command: TerminalCommand): void {
+  if (command.action === 'ping') {
+    if (command.version !== TERMINAL_PROTOCOL_VERSION) throw new Error('Unsupported terminal protocol version');
+    send(socket, { type: 'pong', version: TERMINAL_PROTOCOL_VERSION });
+    return;
+  }
   if (command.action === 'create') {
     if (!sessions.has(command.id)) {
       const shell = process.env.SHELL || '/bin/bash';

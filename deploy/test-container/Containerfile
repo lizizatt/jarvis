@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.7
+FROM node:22-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends bash ca-certificates g++ git make python3 \
+  && rm -rf /var/lib/apt/lists/* \
+  && install -d -o node -g node /workspace
+
+WORKDIR /workspace
+USER node
+
+COPY --chown=node:node .jarvis-container-context.json ./
+COPY --chown=node:node package.json package-lock.json eslint.config.js playwright.config.ts tsconfig.base.json tsconfig.json ./
+COPY --chown=node:node apps/server/package.json apps/server/tsconfig.json ./apps/server/
+COPY --chown=node:node apps/web/package.json apps/web/tsconfig.app.json apps/web/tsconfig.json apps/web/tsconfig.node.json apps/web/vite.config.ts ./apps/web/
+COPY --chown=node:node apps/vscode-worker/package.json apps/vscode-worker/tsconfig.json apps/vscode-worker/esbuild.js apps/vscode-worker/eslint.config.mjs ./apps/vscode-worker/
+COPY --chown=node:node sigil-lib/package.json sigil-lib/vite.config.js ./sigil-lib/
+
+RUN npm ci --no-audit --no-fund
+
+COPY --chown=node:node jarvis.deployment.json ./
+COPY --chown=node:node apps/server/e2e-server.ts ./apps/server/
+COPY --chown=node:node apps/server/src ./apps/server/src
+COPY --chown=node:node apps/server/test ./apps/server/test
+COPY --chown=node:node apps/web/index.html ./apps/web/
+COPY --chown=node:node apps/web/public ./apps/web/public
+COPY --chown=node:node apps/web/src ./apps/web/src
+COPY --chown=node:node apps/vscode-worker/src ./apps/vscode-worker/src
+COPY --chown=node:node deploy/test-container/Containerfile ./deploy/test-container/Containerfile
+COPY --chown=node:node deploy/systemd/install.sh deploy/systemd/install.test.mjs deploy/systemd/jarvis-terminal-host.service.template deploy/systemd/jarvis.service.template deploy/systemd/managed-deployment.service.template deploy/systemd/terminal-host.sh.template deploy/systemd/test.sh deploy/systemd/uninstall.sh ./deploy/systemd/
+COPY --chown=node:node scripts/digital-window-harness.mjs scripts/shoot-halo.mjs ./scripts/
+COPY --chown=node:node sigil-lib/index.html ./sigil-lib/
+COPY --chown=node:node sigil-lib/src ./sigil-lib/src
+COPY --chown=node:node tools/isolated-runner-lib.mjs tools/isolated-runner.mjs tools/isolated-runner.test.mjs tools/isolated-smoke.mjs tools/prepare-container-context.mjs tools/reconcile-deployments.mjs tools/register-repository.mjs tools/resolve-installation.mjs tools/sandbox-smoke.mjs ./tools/
+
+ENV CI=true \
+  HOME=/tmp \
+  JARVIS_ALLOW_INSECURE_NETWORK=false \
+  JARVIS_HOST=127.0.0.1 \
+  JARVIS_PORT=0 \
+  JARVIS_TERMINAL_HOST_EXTERNAL=false \
+  PLAYWRIGHT_ALLOW_EXTERNAL=false \
+  SHELL=/bin/bash \
+  TMPDIR=/tmp \
+  XDG_CACHE_HOME=/tmp/xdg-cache \
+  XDG_CONFIG_HOME=/tmp/xdg-config \
+  XDG_DATA_HOME=/tmp/xdg-data \
+  XDG_RUNTIME_DIR=/tmp/xdg-runtime \
+  XDG_STATE_HOME=/tmp/xdg-state
+
+RUN --network=none npm run lint \
+  && npm run typecheck \
+  && npm test --workspace @jarvis/server --workspace @jarvis/web \
+  && npm run test:deployment \
+  && npm run test:isolated-runner \
+  && printf '%s\n' '[container] UNAVAILABLE worker extension-host tests: no VS Code test runtime is downloaded' \
+  && npm run build
+
+CMD ["node", "tools/isolated-smoke.mjs"]

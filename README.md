@@ -19,11 +19,11 @@ deploy/systemd      Per-user service installer and unit templates
 tools               Repository registration and smoke-test utilities
 ```
 
-Production uses three user services:
+Production uses two core user services and any explicitly selected managed deployments:
 
 - `jarvis.service` serves the API and built PWA.
 - `jarvis-terminal-host.service` owns persistent PTY sessions.
-- `jarvis-jam-assistant.service` runs the Jam Assistant Vite server on localhost:4173 and manages its private Tailscale Serve endpoint.
+- Managed deployment manifests can add project services such as Jam Assistant.
 
 ## Start Here
 
@@ -71,10 +71,13 @@ Open that checkout in its own VS Code window and run **Jarvis: Connect Copilot W
 ## Health
 
 ```bash
-systemctl --user is-active jarvis jarvis-terminal-host jarvis-jam-assistant
+systemctl --user is-active jarvis
+systemctl --user is-active jarvis-terminal-host
 curl -fsS http://127.0.0.1:3210/api/health
+curl -fsS http://127.0.0.1:3210/api/readiness
+curl -fsS http://127.0.0.1:3210/
 curl -fsS http://127.0.0.1:4173/
 curl -fsS http://127.0.0.1:3210/api/workers
 ```
 
-`/api/health` checks the server. `/api/workers` separately shows whether registered VS Code windows and model catalogs are available.
+`/api/health` checks server liveness. `/api/readiness` checks the built web entry and terminal socket without requiring a worker. The root request verifies that the PWA is served, and `/api/workers` separately shows registered VS Code windows and model catalogs. Check every selected managed unit with its own `systemctl is-active` invocation and health URL.

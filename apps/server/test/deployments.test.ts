@@ -26,6 +26,32 @@ describe('DeploymentManager', () => {
     expect(await readFile(fixture.calls, 'utf8')).toContain('--user stop jarvis-alesis.service');
   });
 
+  it('uses v2 snapshots when provenance source manifests are unavailable', async () => {
+    const fixture = await makeFixture();
+    const alesisManifest = JSON.parse(await readFile(fixture.alesis, 'utf8'));
+    const jarvisManifest = JSON.parse(await readFile(fixture.jarvis, 'utf8'));
+    await writeFile(fixture.registry, JSON.stringify({
+      version: 2,
+      deployments: [
+        { manifest: alesisManifest, provenance: { manifestPath: fixture.alesis } },
+        { manifest: jarvisManifest, provenance: { manifestPath: fixture.jarvis } },
+      ],
+      managedUnits: ['jarvis-alesis.service'],
+      retiringUnits: [],
+    }));
+    await Promise.all([rm(fixture.alesis), rm(fixture.jarvis)]);
+    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun, fixture.tailscale);
+
+    await expect(manager.list()).resolves.toEqual([
+      { id: 'alesis', name: 'Alesis', kind: 'managed', state: 'running', enabled: true,
+        healthy: false, actions: ['start', 'stop', 'restart'], homeUrl: 'https://jarvis.example.ts.net:8787/' },
+      { id: 'jarvis', name: 'Jarvis', kind: 'self', state: 'running', enabled: true,
+        healthy: null, actions: ['restart'], warning: 'May interrupt active work.' },
+    ]);
+    await expect(manager.act('alesis', 'restart')).resolves.toEqual({ accepted: true, scheduled: false });
+    expect(await readFile(fixture.calls, 'utf8')).toContain('--user restart jarvis-alesis.service');
+  });
+
   it('rejects unknown deployments and forbidden actions without invoking systemd', async () => {
     const fixture = await makeFixture();
     const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun, fixture.tailscale);
@@ -45,6 +71,16 @@ describe('DeploymentManager', () => {
     expect(calls).not.toMatch(/^systemctl .*restart jarvis\.service$/m);
   });
 
+  it('accepts a configured non-loopback health URL for the self deployment', async () => {
+    const fixture = await makeFixture();
+    const manifest = JSON.parse(await readFile(fixture.jarvis, 'utf8'));
+    await writeFile(fixture.jarvis, JSON.stringify({ ...manifest, healthUrl: 'http://192.0.2.10:4321/api/health' }));
+
+    const manager = new DeploymentManager(fixture.registry, fixture.systemctl, fixture.systemdRun, fixture.tailscale);
+
+    await expect(manager.act('jarvis', 'restart')).resolves.toEqual({ accepted: true, scheduled: true });
+  });
+
   it('requires absolute allowlisted manifest paths', async () => {
     const fixture = await makeFixture();
     await writeFile(fixture.registry, JSON.stringify({ version: 1, manifests: ['alesis.json'] }));
@@ -55,7 +91,7 @@ describe('DeploymentManager', () => {
   });
 });
 
-async function makeFixture(): Promise<{ root: string; registry: string; systemctl: string; systemdRun: string; tailscale: string; calls: string }> {
+async function makeFixture(): Promise<{ root: string; registry: string; systemctl: string; systemdRun: string; tailscale: string; calls: string; alesis: string; jarvis: string }> {
   const root = await mkdtemp(join(tmpdir(), 'jarvis-deployments-'));
   roots.push(root);
   const calls = join(root, 'calls.log');
@@ -86,5 +122,5 @@ printf '%s' '{"Web":{"jarvis.example.ts.net:8787":{"Handlers":{"/":{"Proxy":"htt
   await writeFile(jarvis, JSON.stringify({ version: 1, id: 'jarvis', name: 'Jarvis', kind: 'self',
     systemdUnit: 'jarvis.service', actions: ['restart'], warning: 'May interrupt active work.' }));
   await writeFile(registry, JSON.stringify({ version: 1, manifests: [alesis, jarvis] }));
-  return { root, registry, systemctl, systemdRun, tailscale, calls };
+  return { root, registry, systemctl, systemdRun, tailscale, calls, alesis, jarvis };
 }

@@ -17,10 +17,11 @@ SyslogIdentifier=jarvis
 Environment="JARVIS_HOST=127.0.0.1"
 Environment="JARVIS_PORT=3210"
 Environment="NODE_ENV=production"
-Environment="PATH=@@TOOL_PATH@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin:/opt/nodejs/bin"
+Environment="PATH=@@TOOL_PATH@@"
 
 # Load per-user configuration (if present)
 EnvironmentFile=-%h/.config/jarvis/.env
+EnvironmentFile=%h/.config/jarvis/effective.env
 Environment="JARVIS_TERMINAL_HOST_EXTERNAL=true"
 Environment="JARVIS_AGENT_BACKEND=worker"
 

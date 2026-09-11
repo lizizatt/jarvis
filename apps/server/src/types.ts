@@ -46,10 +46,13 @@ export interface ServerConfig {
   webRoot?: string;
   terminalHostScript?: string;
   terminalHostExternal?: boolean;
+  readinessWebRequired?: boolean;
+  readinessTerminalHostRequired?: boolean;
   tailscaleExecutable?: string;
   deploymentRegistryFile?: string;
   systemctlExecutable?: string;
   systemdRunExecutable?: string;
+  deploymentActionTimeoutMs?: number;
   maxJsonLineBytes: number;
   maxStderrChunkBytes: number;
 }

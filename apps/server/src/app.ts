@@ -24,6 +24,7 @@ interface IdParams { id: string }
 
 export async function createApp(config: ServerConfig): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
+  const staticWebRoot = config.webRoot && existsSync(config.webRoot) ? config.webRoot : undefined;
   const store = new Store(join(config.dataDir, 'jarvis.sqlite3'));
   const interrupted = store.interruptActiveTasks();
   const hub = new EventHub();
@@ -36,11 +37,32 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   const copilot = new CopilotUsageFetcher();
   const portForwarder = new PortForwarder(config.tailscaleExecutable);
   const deployments = new DeploymentManager(config.deploymentRegistryFile ?? join(config.dataDir, 'deployments.json'),
-    config.systemctlExecutable, config.systemdRunExecutable, config.tailscaleExecutable);
+    config.systemctlExecutable, config.systemdRunExecutable, config.tailscaleExecutable, config.deploymentActionTimeoutMs);
   await app.register(websocket);
 
   app.addHook('onClose', async () => { await tasks.shutdown(); workers.close(); hub.removeAllListeners(); store.close(); metrics.close(); });
   app.get('/api/health', async () => ({ ok: true, interruptedOnStartup: interrupted }));
+  app.get('/api/readiness', async (_request, reply) => {
+    const checks: Record<string, { ok: boolean; detail?: string }> = {};
+    if (config.readinessWebRequired) {
+      const webEntry = config.webRoot ? join(config.webRoot, 'index.html') : undefined;
+      const ok = staticWebRoot !== undefined && webEntry !== undefined && existsSync(webEntry);
+      checks.web = ok
+        ? { ok: true }
+        : { ok: false, detail: !webEntry
+          ? 'Web root is not configured'
+          : !staticWebRoot
+            ? `Web routes were not installed because the web root was missing at startup: ${config.webRoot}`
+            : `Web entry file is missing: ${webEntry}` };
+    }
+    if (config.readinessTerminalHostRequired) {
+      const socketPath = join(config.dataDir, 'terminal-host.sock');
+      const ok = await terminals.isHostAvailable();
+      checks.terminalHost = ok ? { ok: true } : { ok: false, detail: `Terminal host socket is unavailable: ${socketPath}` };
+    }
+    const ok = Object.values(checks).every((check) => check.ok);
+    return reply.code(ok ? 200 : 503).send({ ok, checks });
+  });
   app.get('/api/metrics', async () => metrics.current());
   app.get('/api/copilot-usage', async () => copilot.current());
   app.get('/api/settings/port-forwards', async (request, reply) => {
@@ -235,8 +257,8 @@ export async function createApp(config: ServerConfig): Promise<FastifyInstance> 
   app.get<{ Params: IdParams & { '*': string } }>('/previews/:id/repo/*', async (request, reply) =>
     servePreview(store, config, request.params.id, request.params['*'], reply, false));
 
-  if (config.webRoot && existsSync(config.webRoot)) {
-    await app.register(fastifyStatic, { root: config.webRoot, prefix: '/' });
+  if (staticWebRoot) {
+    await app.register(fastifyStatic, { root: staticWebRoot, prefix: '/' });
     app.setNotFoundHandler((request, reply) => request.raw.url?.startsWith('/api/') || request.raw.url?.startsWith('/ws/')
       ? reply.code(404).send({ error: 'Not found' }) : reply.sendFile('index.html'));
   }
@@ -276,7 +298,7 @@ function sendDeploymentError(reply: FastifyReply, error: unknown): unknown {
 
 function sendKnownError(reply: FastifyReply, error: unknown): unknown {
   const known = error as NodeJS.ErrnoException & { statusCode?: number };
-  const status = known.statusCode ?? (known.code?.startsWith('SQLITE_CONSTRAINT') ? 409 : 400);
+  const status = known.statusCode ?? (typeof known.code === 'string' && known.code.startsWith('SQLITE_CONSTRAINT') ? 409 : 400);
   return reply.code(status).send({ error: known.message || 'Request failed' });
 }
 

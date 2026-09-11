@@ -2,11 +2,18 @@ import { spawn } from 'node:child_process';
 import { createConnection, type Socket } from 'node:net';
 import { extname } from 'node:path';
 import type { WebSocket } from 'ws';
-import type { TerminalCommand } from './terminal-protocol.js';
+import { TERMINAL_PROTOCOL_VERSION, type TerminalCommand } from './terminal-protocol.js';
+
+const HOST_PROBE_TIMEOUT_MS = 250;
+const HOST_PROBE_MAX_BYTES = 4096;
 
 export class TerminalManager {
   private starting?: Promise<void>;
   constructor(private readonly socketPath: string, private readonly hostScript: string, private readonly externalHost = false) {}
+
+  isHostAvailable(): Promise<boolean> {
+    return probeHost(this.socketPath);
+  }
 
   async bridge(webSocket: WebSocket, terminalId: string, cwd: string, create: boolean,
     onReady: () => void, onExit: () => void): Promise<void> {
@@ -51,11 +58,11 @@ export class TerminalManager {
   }
 
   private async ensureHost(): Promise<void> {
-    if (await canConnect(this.socketPath)) return;
+    if (await probeHost(this.socketPath)) return;
     if (this.externalHost) {
       for (let attempt = 0; attempt < 100; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 50));
-        if (await canConnect(this.socketPath)) return;
+        if (await probeHost(this.socketPath)) return;
       }
       throw new Error('Managed terminal host is not available');
     }
@@ -68,7 +75,7 @@ export class TerminalManager {
         child.unref();
         for (let attempt = 0; attempt < 50; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, 20));
-          if (await canConnect(this.socketPath)) return;
+          if (await probeHost(this.socketPath)) return;
         }
         throw new Error('Detached terminal host did not become ready');
       })().finally(() => { this.starting = undefined; });
@@ -77,10 +84,39 @@ export class TerminalManager {
   }
 }
 
-function canConnect(socketPath: string): Promise<boolean> {
+function probeHost(socketPath: string): Promise<boolean> {
   return new Promise((resolve) => {
     const socket: Socket = createConnection(socketPath);
-    socket.once('connect', () => { socket.destroy(); resolve(true); });
-    socket.once('error', () => resolve(false));
+    let settled = false;
+    let buffer = '';
+    const finish = (available: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket.destroy();
+      resolve(available);
+    };
+    socket.setEncoding('utf8');
+    const timeout = setTimeout(() => finish(false), HOST_PROBE_TIMEOUT_MS);
+    socket.once('connect', () => socket.write(`${JSON.stringify({
+      action: 'ping', version: TERMINAL_PROTOCOL_VERSION,
+    })}\n`));
+    socket.on('data', (chunk) => {
+      buffer += chunk;
+      const newline = buffer.indexOf('\n');
+      if (newline < 0) {
+        if (Buffer.byteLength(buffer) > HOST_PROBE_MAX_BYTES) finish(false);
+        return;
+      }
+      const frame = buffer.slice(0, newline);
+      if (Buffer.byteLength(frame) > HOST_PROBE_MAX_BYTES) { finish(false); return; }
+      try {
+        const message = JSON.parse(frame) as { type?: string; version?: number };
+        finish(message.type === 'pong' && message.version === TERMINAL_PROTOCOL_VERSION);
+      } catch { finish(false); }
+    });
+    socket.once('error', () => finish(false));
+    socket.once('end', () => finish(false));
+    socket.once('close', () => finish(false));
   });
 }

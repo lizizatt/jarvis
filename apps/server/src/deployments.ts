@@ -4,8 +4,11 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const EXEC_OPTIONS = { encoding: 'utf8' as const, timeout: 10_000 };
+const STATUS_EXEC_OPTIONS = { encoding: 'utf8' as const, timeout: 10_000 };
+export const DEFAULT_DEPLOYMENT_ACTION_TIMEOUT_MS = 45_000;
 const UNIT_PATTERN = /^jarvis(?:-[a-z0-9-]+)?\.service$/;
+const MANAGED_UNIT_PATTERN = /^jarvis-[a-z0-9]+(?:-[a-z0-9]+)*\.service$/;
+const RESERVED_CORE_UNITS = new Set(['jarvis.service', 'jarvis-terminal-host.service']);
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export type DeploymentAction = 'start' | 'stop' | 'restart';
@@ -37,7 +40,18 @@ export interface DeploymentStatus {
   detail?: string;
 }
 
-interface DeploymentRegistry { version: 1; manifests: string[] }
+interface DeploymentRegistryV1 { version: 1; manifests: string[] }
+interface InstalledDeployment {
+  manifest: DeploymentManifest;
+  provenance: { manifestPath: string };
+}
+interface DeploymentRegistryV2 {
+  version: 2;
+  deployments: InstalledDeployment[];
+  managedUnits: string[];
+  retiringUnits: Array<{ systemdUnit: string; phase: 'pending' | 'disabled' }>;
+}
+type DeploymentRegistry = DeploymentRegistryV1 | DeploymentRegistryV2;
 
 export class DeploymentError extends Error {
   constructor(message: string, readonly statusCode: number) { super(message); }
@@ -49,6 +63,7 @@ export class DeploymentManager {
     private readonly systemctlExecutable = 'systemctl',
     private readonly systemdRunExecutable = 'systemd-run',
     private readonly tailscaleExecutable = 'tailscale',
+    private readonly actionTimeoutMs = DEFAULT_DEPLOYMENT_ACTION_TIMEOUT_MS,
   ) {}
 
   async list(): Promise<DeploymentStatus[]> {
@@ -67,10 +82,20 @@ export class DeploymentManager {
       await execFileAsync(this.systemdRunExecutable, [
         '--user', `--unit=${transientUnit}`, '--on-active=1s',
         this.systemctlExecutable, '--user', 'restart', manifest.systemdUnit,
-      ], EXEC_OPTIONS);
+      ], STATUS_EXEC_OPTIONS);
       return { accepted: true, scheduled: true };
     }
-    await execFileAsync(this.systemctlExecutable, ['--user', action, manifest.systemdUnit], EXEC_OPTIONS);
+    try {
+      await execFileAsync(this.systemctlExecutable, ['--user', action, manifest.systemdUnit], {
+        ...STATUS_EXEC_OPTIONS,
+        timeout: this.actionTimeoutMs,
+      });
+    } catch (error) {
+      if (isCommandTimeout(error)) {
+        throw new DeploymentError(`Managed action ${action} for ${manifest.name} timed out after ${this.actionTimeoutMs} ms`, 504);
+      }
+      throw error;
+    }
     return { accepted: true, scheduled: false };
   }
 
@@ -80,7 +105,7 @@ export class DeploymentManager {
       const { stdout } = await execFileAsync(this.systemctlExecutable, [
         '--user', 'show', manifest.systemdUnit, '--no-pager',
         '--property=LoadState,ActiveState,SubState,UnitFileState',
-      ], EXEC_OPTIONS);
+      ], STATUS_EXEC_OPTIONS);
       const properties = parseProperties(stdout);
       const state = deploymentState(properties.LoadState, properties.ActiveState);
       const healthy = state === 'running' && manifest.healthUrl ? await probe(manifest.healthUrl) : null;
@@ -98,7 +123,7 @@ export class DeploymentManager {
 
   private async homeUrls(): Promise<Map<number, string>> {
     try {
-      const { stdout } = await execFileAsync(this.tailscaleExecutable, ['serve', 'status', '--json'], EXEC_OPTIONS);
+      const { stdout } = await execFileAsync(this.tailscaleExecutable, ['serve', 'status', '--json'], STATUS_EXEC_OPTIONS);
       return parseServeHomeUrls(stdout);
     } catch { return new Map(); }
   }
@@ -111,18 +136,12 @@ export class DeploymentManager {
       throw error;
     }
     const registry = parseRegistry(registryText);
-    const manifests = await Promise.all(registry.manifests.map(async (manifestPath) => {
-      if (!isAbsolute(manifestPath)) throw new DeploymentError('Deployment manifest paths must be absolute', 500);
-      const manifest = parseManifest(await readFile(manifestPath, 'utf8'), manifestPath);
-      if (manifest.runner) {
-        const runnerPath = resolve(dirname(manifestPath), manifest.runner);
-        const pathFromRoot = relative(dirname(manifestPath), runnerPath);
-        if (pathFromRoot.startsWith('..') || isAbsolute(pathFromRoot)) {
-          throw new DeploymentError(`Runner for ${manifest.id} must stay inside its project`, 500);
-        }
-      }
-      return manifest;
-    }));
+    const manifests = registry.version === 1
+      ? await Promise.all(registry.manifests.map(async (manifestPath) => {
+        if (!isAbsolute(manifestPath)) throw new DeploymentError('Deployment manifest paths must be absolute', 500);
+        return parseManifest(await readFile(manifestPath, 'utf8'), manifestPath);
+      }))
+      : registry.deployments.map(({ manifest, provenance }) => validateManifest(manifest, provenance.manifestPath));
     if (new Set(manifests.map(({ id }) => id)).size !== manifests.length) throw new DeploymentError('Deployment IDs must be unique', 500);
     if (new Set(manifests.map(({ systemdUnit }) => systemdUnit)).size !== manifests.length) throw new DeploymentError('Deployment units must be unique', 500);
     return manifests;
@@ -130,15 +149,45 @@ export class DeploymentManager {
 }
 
 function parseRegistry(text: string): DeploymentRegistry {
-  const value = JSON.parse(text) as Partial<DeploymentRegistry>;
-  if (value.version !== 1 || !Array.isArray(value.manifests) || !value.manifests.every((path) => typeof path === 'string')) {
+  const value = JSON.parse(text) as {
+    version?: unknown;
+    manifests?: unknown;
+    deployments?: unknown;
+    managedUnits?: unknown;
+    retiringUnits?: unknown;
+  };
+  if (value.version === 1 && Array.isArray(value.manifests)
+    && value.manifests.every((path) => typeof path === 'string')) {
+    return value as DeploymentRegistryV1;
+  }
+  if (value.version !== 2 || !Array.isArray(value.deployments)
+    || !value.deployments.every((deployment) => isInstalledDeployment(deployment))
+    || !Array.isArray(value.managedUnits) || !value.managedUnits.every(isManagedUnit)
+    || new Set(value.managedUnits).size !== value.managedUnits.length
+    || !Array.isArray(value.retiringUnits) || !value.retiringUnits.every((retirement) => (
+      typeof retirement === 'object' && retirement !== null
+      && isManagedUnit((retirement as { systemdUnit?: unknown }).systemdUnit)
+      && ['pending', 'disabled'].includes(String((retirement as { phase?: unknown }).phase))
+    ))) {
     throw new DeploymentError('Invalid deployment registry', 500);
   }
-  return value as DeploymentRegistry;
+  const registry = value as DeploymentRegistryV2;
+  const managedUnits = registry.deployments
+    .filter(({ manifest }) => manifest.kind === 'managed')
+    .map(({ manifest }) => manifest.systemdUnit);
+  if (managedUnits.length !== registry.managedUnits.length
+    || managedUnits.some((unit) => !registry.managedUnits.includes(unit))
+    || registry.retiringUnits.some(({ systemdUnit }) => registry.managedUnits.includes(systemdUnit))) {
+    throw new DeploymentError('Invalid deployment registry', 500);
+  }
+  return registry;
 }
 
 function parseManifest(text: string, path: string): DeploymentManifest {
-  const value = JSON.parse(text) as Partial<DeploymentManifest>;
+  return validateManifest(JSON.parse(text) as Partial<DeploymentManifest>, path);
+}
+
+function validateManifest(value: Partial<DeploymentManifest>, path: string): DeploymentManifest {
   if (value.version !== 1 || typeof value.id !== 'string' || !ID_PATTERN.test(value.id)
     || typeof value.name !== 'string' || !value.name.trim() || !['managed', 'self'].includes(value.kind ?? '')
     || typeof value.systemdUnit !== 'string' || !UNIT_PATTERN.test(value.systemdUnit)
@@ -148,16 +197,40 @@ function parseManifest(text: string, path: string): DeploymentManifest {
   if (value.kind === 'managed' && (typeof value.runner !== 'string' || !value.runner)) {
     throw new DeploymentError(`Managed deployment ${value.id} requires a runner`, 500);
   }
+  if (value.kind === 'managed' && !isManagedUnit(value.systemdUnit)) {
+    throw new DeploymentError(`Managed deployment ${value.id} uses a reserved or invalid unit`, 500);
+  }
   if (value.kind === 'self' && (value.actions.length !== 1 || value.actions[0] !== 'restart')) {
     throw new DeploymentError(`Self deployment ${value.id} may only allow restart`, 500);
   }
   if (value.healthUrl) {
     const url = new URL(value.healthUrl);
-    if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) {
+    if (url.protocol !== 'http:' || (value.kind === 'managed' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))) {
       throw new DeploymentError(`Health URL for ${value.id} must use loopback HTTP`, 500);
     }
   }
-  return value as DeploymentManifest;
+  const manifest = value as DeploymentManifest;
+  if (manifest.runner) {
+    const runnerPath = resolve(dirname(path), manifest.runner);
+    const pathFromRoot = relative(dirname(path), runnerPath);
+    if (pathFromRoot.startsWith('..') || isAbsolute(pathFromRoot)) {
+      throw new DeploymentError(`Runner for ${manifest.id} must stay inside its project`, 500);
+    }
+  }
+  return manifest;
+}
+
+function isInstalledDeployment(value: unknown): value is InstalledDeployment {
+  if (typeof value !== 'object' || value === null) return false;
+  const deployment = value as Partial<InstalledDeployment>;
+  return typeof deployment.manifest === 'object' && deployment.manifest !== null
+    && typeof deployment.provenance === 'object' && deployment.provenance !== null
+    && typeof deployment.provenance.manifestPath === 'string'
+    && isAbsolute(deployment.provenance.manifestPath);
+}
+
+function isManagedUnit(value: unknown): value is string {
+  return typeof value === 'string' && MANAGED_UNIT_PATTERN.test(value) && !RESERVED_CORE_UNITS.has(value);
 }
 
 function parseProperties(output: string): Record<string, string> {
@@ -195,3 +268,8 @@ async function probe(url: string): Promise<boolean> {
 }
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+
+function isCommandTimeout(error: unknown): boolean {
+  const commandError = error as { killed?: unknown; signal?: unknown };
+  return commandError?.killed === true && commandError.signal === 'SIGTERM';
+}

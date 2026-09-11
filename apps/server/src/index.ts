@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
-import { isLoopbackHost, positiveInteger } from './config.js';
+import { absolutePath, isLoopbackHost, nodeTimeout, positiveInteger, tcpPort } from './config.js';
+import { DEFAULT_DEPLOYMENT_ACTION_TIMEOUT_MS } from './deployments.js';
 import type { ServerConfig } from './types.js';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
@@ -23,21 +24,27 @@ const host = process.env.JARVIS_HOST || '127.0.0.1';
 if (!isLoopbackHost(host) && process.env.JARVIS_ALLOW_INSECURE_NETWORK !== 'true') {
   throw new Error('JARVIS_HOST must remain loopback unless JARVIS_ALLOW_INSECURE_NETWORK=true');
 }
+const terminalHostExternal = process.env.JARVIS_TERMINAL_HOST_EXTERNAL === 'true';
 const config: ServerConfig = {
   dataDir,
   host,
-  port: Number(process.env.JARVIS_PORT || 3210),
+  port: tcpPort(process.env.JARVIS_PORT, 3210, 'JARVIS_PORT'),
   agentExecutable: process.env.JARVIS_AGENT_EXECUTABLE || 'copilot',
   editorExecutable: process.env.JARVIS_EDITOR_EXECUTABLE || 'code',
   agentBackend: agentBackend as ServerConfig['agentBackend'],
   policy: [frameworkInstructions, configuredPolicy].filter(Boolean).join('\n\n'),
   webRoot: process.env.JARVIS_WEB_ROOT || join(repositoryRoot, 'apps/web/dist'),
   terminalHostScript: process.env.JARVIS_TERMINAL_HOST_SCRIPT || join(currentDirectory, 'terminal-host.js'),
-  terminalHostExternal: process.env.JARVIS_TERMINAL_HOST_EXTERNAL === 'true',
+  terminalHostExternal,
+  readinessWebRequired: true,
+  readinessTerminalHostRequired: terminalHostExternal,
   tailscaleExecutable: process.env.JARVIS_TAILSCALE_EXECUTABLE || 'tailscale',
-  deploymentRegistryFile: process.env.JARVIS_DEPLOYMENT_REGISTRY || join(homedir(), '.config/jarvis/deployments.json'),
+  deploymentRegistryFile: absolutePath(process.env.JARVIS_DEPLOYMENT_REGISTRY,
+    join(homedir(), '.config/jarvis/deployments.json'), 'JARVIS_DEPLOYMENT_REGISTRY'),
   systemctlExecutable: process.env.JARVIS_SYSTEMCTL_EXECUTABLE || 'systemctl',
   systemdRunExecutable: process.env.JARVIS_SYSTEMD_RUN_EXECUTABLE || 'systemd-run',
+  deploymentActionTimeoutMs: nodeTimeout(process.env.JARVIS_DEPLOYMENT_ACTION_TIMEOUT_MS,
+    DEFAULT_DEPLOYMENT_ACTION_TIMEOUT_MS, 'JARVIS_DEPLOYMENT_ACTION_TIMEOUT_MS'),
   maxJsonLineBytes: positiveInteger(process.env.JARVIS_MAX_JSON_LINE_BYTES, 1024 * 1024, 'JARVIS_MAX_JSON_LINE_BYTES'),
   maxStderrChunkBytes: positiveInteger(process.env.JARVIS_MAX_STDERR_CHUNK_BYTES, 64 * 1024, 'JARVIS_MAX_STDERR_CHUNK_BYTES'),
 };

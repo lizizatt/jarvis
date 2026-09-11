@@ -9,6 +9,7 @@ ConditionUser=!root
 Type=simple
 WorkingDirectory=@@PROJECT_ROOT@@
 EnvironmentFile=-%h/.config/jarvis/.env
+EnvironmentFile=%h/.config/jarvis/effective.env
 Environment="PATH=@@TOOL_PATH@@"
 ExecStart="@@RUNNER_PATH@@"
 Restart=on-failure

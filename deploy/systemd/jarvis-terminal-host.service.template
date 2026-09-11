@@ -4,6 +4,7 @@ Description=Jarvis Persistent Terminal Host
 Type=simple
 WorkingDirectory=@@REPO_ROOT@@
 EnvironmentFile=-%h/.config/jarvis/.env
+EnvironmentFile=%h/.config/jarvis/effective.env
 ExecStart=@@TERMINAL_RUNNER@@
 Restart=on-failure
 RestartSec=2
