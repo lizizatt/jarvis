@@ -11,6 +11,9 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const POLL_INTERVAL_SECONDS = 2;
 const CREDIT_POLL_INTERVAL_SECONDS = 60;
+const REQUEST_TIMEOUT_SECONDS = 5;
+const REPOSITORY_STATUS_TIMEOUT_SECONDS = 35;
+const REPOSITORY_STATUS_CONCURRENCY = 2;
 const DASHBOARD_URL = 'http://127.0.0.1:3210/';
 const REPOSITORY_HEARTS = [
   '❤️', '🧡', '💛', '💚', '💙', '💜', '🤎', '🖤', '🤍', '🩷', '🩵', '🩶',
@@ -43,6 +46,9 @@ class JarvisIndicator extends PanelMenu.Button {
 export default class JarvisSystemStatusExtension extends Extension {
   enable() {
     this._session = new Soup.Session();
+    this._statusSession = new Soup.Session();
+    this._statusQueue = [];
+    this._activeStatusRequests = 0;
     this._indicator = new JarvisIndicator();
     this._box = new St.BoxLayout({ style_class: 'panel-status-menu-box' });
     this._dashboard = this._clickableLabel('🏳️‍⚧️', () => this._openUrl(DASHBOARD_URL));
@@ -102,6 +108,12 @@ export default class JarvisSystemStatusExtension extends Extension {
     this._workersTimer = null;
     this._session?.abort();
     this._session = null;
+    const statusSession = this._statusSession;
+    this._statusSession = null;
+    for (const { actor } of this._statusQueue ?? []) actor.jarvisStatusPending = false;
+    this._statusQueue = null;
+    this._activeStatusRequests = 0;
+    statusSession?.abort();
     this._tooltip?.destroy();
     this._tooltip = null;
     this._indicator?.destroy();
@@ -173,13 +185,12 @@ export default class JarvisSystemStatusExtension extends Extension {
     }
   }
 
-  async _fetch(path, method = 'GET') {
-    const session = this._session;
+  async _fetch(path, method = 'GET', timeoutSeconds = REQUEST_TIMEOUT_SECONDS, session = this._session) {
     if (!session) return null;
     const message = Soup.Message.new('GET', `${DASHBOARD_URL}api/${path}`);
     message.set_method(method);
     const cancellable = Gio.Cancellable.new();
-    let timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+    let timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, timeoutSeconds, () => {
       cancellable.cancel();
       timeout = 0;
       return GLib.SOURCE_REMOVE;
@@ -221,13 +232,14 @@ export default class JarvisSystemStatusExtension extends Extension {
 
   async _refreshWorkers() {
     if (this._workersRefreshInFlight) return;
+    const session = this._session;
     this._workersRefreshInFlight = true;
     try {
       const [repositories, workers] = await Promise.all([
         this._fetch('repositories'),
         this._fetch('workers'),
       ]);
-      if (!repositories || !workers || !this._workersBox) return;
+      if (!repositories || !workers || !this._workersBox || this._session !== session) return;
       const currentWorkerIds = new Set(workers.map((worker) => worker.workerId));
       for (const workerId of this._workerWindows.keys()) {
         if (!currentWorkerIds.has(workerId)) this._workerWindows.delete(workerId);
@@ -235,6 +247,7 @@ export default class JarvisSystemStatusExtension extends Extension {
       const currentRepositoryIds = new Set(repositories.map((repository) => repository.id));
       for (const [repositoryId, actor] of this._repositoryActors) {
         if (!currentRepositoryIds.has(repositoryId)) {
+          if (actor.hover) this._tooltip?.hide();
           actor.destroy();
           this._repositoryActors.delete(repositoryId);
         }
@@ -247,13 +260,12 @@ export default class JarvisSystemStatusExtension extends Extension {
         if (!actor) {
           actor = this._clickableLabel(text, () => this._activateRepository(actor.jarvisRepository, actor.jarvisWorker));
           actor.add_style_class_name('jarvis-worker-status');
+          actor.jarvisStatusPending = false;
+          actor.jarvisStatusFailed = false;
           this._repositoryActors.set(repository.id, actor);
           this._workersBox.add_child(actor);
         }
         actor.text = text;
-        actor.jarvisTooltipText = worker
-          ? `${repository.name}\nWindow: ${this._presenceText(worker.presence)}\nJarvis: ${this._activityText(activity)}`
-          : `${repository.name}\nWindow: closed`;
         actor.jarvisRepository = repository;
         actor.jarvisWorker = worker;
         actor.remove_style_class_name('jarvis-worker-focused');
@@ -269,10 +281,81 @@ export default class JarvisSystemStatusExtension extends Extension {
           actor.add_effect_with_name('jarvis-worker-closed', new Clutter.DesaturateEffect({ factor: 1.0 }));
         }
         this._workersBox.set_child_at_index(actor, index);
+        this._updateRepositoryTooltip(actor, activity);
+        this._refreshRepositoryStatus(actor);
       });
     } finally {
-      this._workersRefreshInFlight = false;
+      if (this._session === session) this._workersRefreshInFlight = false;
     }
+  }
+
+  _refreshRepositoryStatus(actor) {
+    if (actor.jarvisStatusPending) return;
+    const statusSession = this._statusSession;
+    const statusQueue = this._statusQueue;
+    if (!statusSession || !statusQueue) return;
+    const repositoryId = actor.jarvisRepository.id;
+    actor.jarvisStatusPending = true;
+    statusQueue.push({ actor, repositoryId });
+    this._drainRepositoryStatusQueue(statusSession, statusQueue);
+  }
+
+  _drainRepositoryStatusQueue(statusSession, statusQueue) {
+    if (this._statusSession !== statusSession || this._statusQueue !== statusQueue) return;
+    while (this._activeStatusRequests < REPOSITORY_STATUS_CONCURRENCY && statusQueue.length > 0) {
+      const request = statusQueue.shift();
+      if (this._repositoryActors?.get(request.repositoryId) !== request.actor) {
+        request.actor.jarvisStatusPending = false;
+        continue;
+      }
+      this._activeStatusRequests++;
+      void this._readRepositoryStatus(request, statusSession, statusQueue);
+    }
+  }
+
+  async _readRepositoryStatus({ actor, repositoryId }, statusSession, statusQueue) {
+    let status = null;
+    try {
+      status = await this._fetch(
+        `repositories/${encodeURIComponent(repositoryId)}/status`,
+        'GET',
+        REPOSITORY_STATUS_TIMEOUT_SECONDS,
+        statusSession,
+      );
+      if (!this._workersBox
+        || this._statusSession !== statusSession
+        || this._statusQueue !== statusQueue
+        || this._repositoryActors?.get(repositoryId) !== actor) return;
+      if (status) {
+        actor.jarvisRepositoryStatus = status;
+        actor.jarvisStatusFailed = false;
+      } else {
+        actor.jarvisStatusFailed = true;
+      }
+      this._updateRepositoryTooltip(actor);
+    } finally {
+      actor.jarvisStatusPending = false;
+      if (this._statusSession === statusSession && this._statusQueue === statusQueue) {
+        this._activeStatusRequests--;
+        this._drainRepositoryStatusQueue(statusSession, statusQueue);
+      }
+    }
+  }
+
+  _updateRepositoryTooltip(actor, activity = actor.jarvisWorker?.activity
+    ?? (actor.jarvisWorker?.activeTaskIds?.length ? 'thinking' : 'idle')) {
+    const repository = actor.jarvisRepository;
+    const worker = actor.jarvisWorker;
+    const status = actor.jarvisRepositoryStatus;
+    const stale = actor.jarvisStatusFailed && status ? ' (last known)' : '';
+    const branch = status?.branch === '(detached)' ? 'detached HEAD' : status?.branch ?? 'unknown';
+    const gitState = typeof status?.dirty !== 'boolean' ? 'unavailable'
+      : status.dirty ? 'dirty' : status.clean === false ? 'clean (untracked files)' : 'clean';
+    const repositoryContext = `${repository.name}\nBranch: ${branch}${stale}\nGit: ${gitState}${stale}`;
+    actor.jarvisTooltipText = worker
+      ? `${repositoryContext}\nWindow: ${this._presenceText(worker.presence)}\nJarvis: ${this._activityText(activity)}`
+      : `${repositoryContext}\nWindow: closed`;
+    if (actor.hover) this._syncTooltip(actor);
   }
 
   _presenceText(presence) {

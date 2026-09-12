@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "repo:add": "node tools/register-repository.mjs",
     "digital-window:harness": "node scripts/digital-window-harness.mjs",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run test:gnome",
+    "test:gnome": "node --test deploy/gnome-shell/*.test.js",
     "test:e2e": "npm run build --workspace @jarvis/web && playwright test",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

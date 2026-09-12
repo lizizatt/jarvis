@@ -157,6 +157,32 @@ fi
     expect(typeof pr.available).toBe('boolean');
   });
 
+  it('reads the current checkout after restart without a Copilot worker', async () => {
+    const sandbox = await makeSandbox();
+    const initialApp = await trackedApp(configuration(sandbox.dataDir));
+    const repository = await register(initialApp, sandbox.repository);
+    await initialApp.close();
+    apps.splice(apps.indexOf(initialApp), 1);
+
+    await git(sandbox.repository, ['checkout', '-b', 'feature/without-copilot']);
+    await writeFile(join(sandbox.repository, 'README.md'), 'changed without a worker\n');
+    const app = await trackedApp(configuration(sandbox.dataDir));
+    expect((await app.inject({ method: 'GET', url: '/api/workers' })).json()).toEqual([]);
+    expect((await app.inject({ method: 'GET', url: '/api/repositories' })).json()).toEqual([
+      expect.objectContaining({ id: repository.id, copilotActive: false, defaultBranch: 'main' }),
+    ]);
+    const statusUrl = `/api/repositories/${repository.id}/status`;
+    expect((await app.inject({ method: 'GET', url: statusUrl })).json()).toMatchObject({
+      branch: 'feature/without-copilot', dirty: true, clean: false,
+    });
+
+    await git(sandbox.repository, ['add', 'README.md']);
+    await git(sandbox.repository, ['commit', '-m', 'Update without Copilot']);
+    expect((await app.inject({ method: 'GET', url: statusUrl })).json()).toMatchObject({
+      branch: 'feature/without-copilot', dirty: false, clean: true,
+    });
+  });
+
   it('reports Copilot presence and opens an inactive repository in VS Code', async () => {
     const sandbox = await makeSandbox();
     const executable = join(sandbox.root, 'code');
